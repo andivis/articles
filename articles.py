@@ -21,6 +21,7 @@ class Articles:
     def run(self):
         self.initialize()
 
+        # go through each site
         for item in self.sites:
             self.doItem(item)
             self.onItemIndex += 1
@@ -30,14 +31,17 @@ class Articles:
     def doItem(self, item):
         for keyword in self.keywords:
             self.showStatus(item, keyword)
-            
+        
+            # already done?
             if self.isDone(item, keyword):
                 continue
 
             try:
+                # do the search and download the results
                 self.lookUpItem(item, keyword)
                 self.markDone(item, keyword)
             except Exception as e:
+                # if something goes wrong, we just go to next keyword
                 logging.error(f'Skipping. Something went wrong.')
                 logging.error(e)
 
@@ -48,10 +52,13 @@ class Articles:
         
         articles = []
 
+        # use pubmed's api
         if siteName == 'nih.gov':
             articles = self.nihSearch(site, keyword)
+        # use arxiv's api
         elif siteName == 'arxiv.org':
             articles = self.arxivSearch(site, keyword)
+        # get the website and parse it
         else:
             siteData = {}
             
@@ -78,6 +85,7 @@ class Articles:
 
         i = 0
         
+        # download all the pdf url's we found
         for article in articles:
             logging.info(f'Site {self.onItemIndex + 1} of {len(self.sites)}: {siteName}. Keyword {self.onKeywordIndex + 1} of {len(self.keywords)}: {keyword}. Downloading item {i + 1} of {len(articles)}: {article[0]}.')
                         
@@ -90,6 +98,7 @@ class Articles:
 
         logging.info(f'Site {self.onItemIndex + 1} of {len(self.sites)}: {siteName}. Keyword {self.onKeywordIndex + 1} of {len(self.keywords)}: {keyword}.')
 
+    # have enough results?
     def shouldStopForThisKeyword(self, index, log=True):
         result = False
         
@@ -353,6 +362,7 @@ class Articles:
 
         self.waitBetween()
 
+    # log to search log and/or pdf log
     def logToCsvFiles(self, site, keyword, outputFileName, searchLog, pdfLog):
         outputDirectory = os.path.join(self.options['outputDirectory'], self.subdirectory)
         
@@ -385,6 +395,7 @@ class Articles:
         if pdfLog:
             self.appendCsvFile(pdfLogLine, pdfLogFileName)
 
+    # writes article details to a csv file
     def logNihResultToCsvFile(self, site, keyword, article):
         outputDirectory = os.path.join(self.options['outputDirectory'], self.subdirectory)        
 
@@ -497,6 +508,7 @@ class Articles:
 
         return result
 
+    # so we know not to repeat this site/keyword too soon
     def markDone(self, site, keyword):
         siteName = helpers.getDomainName(site.get('url', ''))
 
@@ -542,6 +554,7 @@ class Articles:
         self.onItemIndex = 0
         self.onKeywordIndex = 0
 
+        # to store the time we finished given sites/keyword combinations
         self.database = Database('database.sqlite')
         self.database.execute('create table if not exists history ( siteName text, keyword text, gmDateLastCompleted text, primary key(siteName, keyword) )')
 
@@ -551,6 +564,7 @@ class Articles:
 
         outputDirectory = os.path.join(str(Path.home()), 'Desktop')
 
+        # set default options
         self.options = {
             'inputWebsitesFile': 'input_websites.txt',
             'inputKeywordsFile': 'input_search_terms.txt',
@@ -562,15 +576,18 @@ class Articles:
             'onlyOneCopyPerPdf': 1
         }
 
+        # read the options file
         helpers.setOptions('options.ini', self.options)
 
         if '--debug' in sys.argv:
             self.options['secondsBetweenItems'] = 3
             self.options['maximumResultsPerKeyword'] = 2
 
+        # read command line parameters
         self.setOptionFromParameter('inputWebsitesFile', '-w')
         self.setOptionFromParameter('inputKeywordsFile', '-s')
 
+        # read websites file
         file = helpers.getFile(self.options['inputWebsitesFile'])
         file = helpers.findBetween(file, "['", "']")
         sites = file.split("', '")
@@ -587,6 +604,7 @@ class Articles:
 
             self.sites.append(site)
 
+        # read keywords file
         keywordsFile = helpers.getFile(self.options['inputKeywordsFile'])
         list = keywordsFile.splitlines()
         self.keywords = []
