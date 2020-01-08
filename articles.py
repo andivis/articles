@@ -553,7 +553,7 @@ class Articles:
             'inputWebsitesFile': 'input_websites.txt',
             'inputKeywordsFile': 'input_search_terms.txt',
             'outputDirectory': outputDirectory,
-            'secondsBetweenItems': 1,
+            'secondsBetweenItems': 0,
             'minimumHoursBetweenRuns': 12,
             'maximumDaysToKeepItems': 60,
             'maximumResultsPerKeyword': 25000,
