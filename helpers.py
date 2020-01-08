@@ -449,7 +449,7 @@ class Downloader:
 
     def downloadBinaryFile(self, url, destinationFileName):       
         import wget
-        logging.info(f'Download {url} to {destinationFileName}')
+        logging.debug(f'Download {url} to {destinationFileName}')
         wget.download(url, destinationFileName)
 
     def getXpath(self, page, xpath, firstOnly=False, attribute=None):

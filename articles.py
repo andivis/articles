@@ -78,9 +78,14 @@ class Articles:
 
         i = 0
         
+        url = site.get('url', '')
+        
         for article in articles:
-            logging.info(f'Downloading item {i + 1} of {len(articles)}')
+            logging.info(f'Site {self.onItemIndex + 1} of {len(self.sites)}: {url}. Keyword {self.onKeywordIndex + 1} of {len(self.keywords)}: {keyword}. Downloading item {i + 1} of {len(articles)}: {article[0]}.')
+                        
             self.outputResult(site, keyword, article)
+
+            i += 1
 
     def showStatus(self, item, keyword):
         url = item.get('url', '')
@@ -329,9 +334,6 @@ class Articles:
     def outputResult(self, site, keyword, article):
         siteName = helpers.getDomainName(site.get('url', ''))
 
-        if len(article) < 2:
-            return
-
         articleId = article[0]
         pdfUrl = article[1]
 
@@ -564,7 +566,7 @@ class Articles:
 
         if '--debug' in sys.argv:
             self.options['secondsBetweenItems'] = 3
-            self.options['maximumResultsPerKeyword'] = 2500
+            self.options['maximumResultsPerKeyword'] = 2
 
         self.setOptionFromParameter('inputWebsitesFile', '-w')
         self.setOptionFromParameter('inputKeywordsFile', '-s')
