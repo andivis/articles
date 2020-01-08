@@ -347,6 +347,8 @@ class Articles:
 
         self.downloader.downloadBinaryFile(pdfUrl, outputFileName)
 
+        print('')
+
         self.logToCsvFiles(site, keyword, outputFileName, False, True)
 
         self.waitBetween()
