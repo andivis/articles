@@ -10,6 +10,7 @@
 ```
 pip install arvix
 pip install lxml
+pip install wget
 ```
 
 ## Instructions

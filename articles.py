@@ -521,6 +521,12 @@ class Articles:
 
         time.sleep(secondsBetweenItems)
 
+    def setOptionFromParameter(self, optionName, parameterName):
+        if not parameterName in sys.argv:
+            return
+
+        self.options[optionName] = helpers.getArgument(parameterName, False)
+
     def cleanUp(self):
         self.database.close()
 
@@ -560,8 +566,8 @@ class Articles:
             self.options['secondsBetweenItems'] = 3
             self.options['maximumResultsPerKeyword'] = 2500
 
-        self.options['inputWebsitesFile'] = helpers.getArgument('-w', True)
-        self.options['inputKeywordsFile'] = helpers.getArgument('-s', True)
+        self.setOptionFromParameter('inputWebsitesFile', '-w')
+        self.setOptionFromParameter('inputKeywordsFile', '-s')
 
         file = helpers.getFile(self.options['inputWebsitesFile'])
         file = helpers.findBetween(file, "['", "']")
