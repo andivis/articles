@@ -86,7 +86,7 @@ class Articles:
             i += 1
 
     def showStatus(self, item, keyword):
-        siteName = helpers.getDomainName(site.get('url', ''))
+        siteName = helpers.getDomainName(item.get('url', ''))
 
         logging.info(f'Site {self.onItemIndex + 1} of {len(self.sites)}: {siteName}. Keyword {self.onKeywordIndex + 1} of {len(self.keywords)}: {keyword}.')
 
