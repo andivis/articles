@@ -31,6 +31,8 @@ pip install wget
 
 ## Options
 
+`options.ini` accepts the following options:
+
 - `maximumResultsPerKeyword`: How many pdf's to download for a given site/keyword combination. -1 means no limit. Default 25000.
 - `onlyOneCopyPerPdf`: Only download a pdf if it does not exist anywhere in the output directory, including previous runs of this app. 1 means yes. 0 means no. Default 1.
 - `minimumHoursBetweenRuns`: How many hours to wait before repeating a given site/keyword combination. Default is 12.
