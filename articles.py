@@ -508,7 +508,7 @@ class Articles:
             'gmDateLastCompleted': str(datetime.datetime.utcnow())
         }
 
-        logging.info(f'Inserting into database')
+        logging.debug(f'Inserting into database')
         logging.debug(item)
             
         self.database.insert('history', item)
