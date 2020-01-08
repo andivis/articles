@@ -2,11 +2,12 @@
 
 ## Installation
 
-1. Make sure Python 3.6 or higher and pip are installed. For example, on Ubuntu run the commands below in a terminal.
+1. Make sure Python 3.6 or higher, pip and git are installed. For example, on Ubuntu run the commands below in a terminal.
 
 ```
 sudo apt install -y python3
 sudo apt install -y python3-pip
+sudo apt install -y git
 ```
 
 2. Open a terminal window
