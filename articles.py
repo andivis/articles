@@ -78,19 +78,17 @@ class Articles:
 
         i = 0
         
-        url = site.get('url', '')
-        
         for article in articles:
-            logging.info(f'Site {self.onItemIndex + 1} of {len(self.sites)}: {url}. Keyword {self.onKeywordIndex + 1} of {len(self.keywords)}: {keyword}. Downloading item {i + 1} of {len(articles)}: {article[0]}.')
+            logging.info(f'Site {self.onItemIndex + 1} of {len(self.sites)}: {siteName}. Keyword {self.onKeywordIndex + 1} of {len(self.keywords)}: {keyword}. Downloading item {i + 1} of {len(articles)}: {article[0]}.')
                         
             self.outputResult(site, keyword, article)
 
             i += 1
 
     def showStatus(self, item, keyword):
-        url = item.get('url', '')
+        siteName = helpers.getDomainName(site.get('url', ''))
 
-        logging.info(f'Site {self.onItemIndex + 1} of {len(self.sites)}: {url}. Keyword {self.onKeywordIndex + 1} of {len(self.keywords)}: {keyword}.')
+        logging.info(f'Site {self.onItemIndex + 1} of {len(self.sites)}: {siteName}. Keyword {self.onKeywordIndex + 1} of {len(self.keywords)}: {keyword}.')
 
     def shouldStopForThisKeyword(self, index, log=True):
         result = False
