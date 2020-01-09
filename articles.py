@@ -396,8 +396,10 @@ class Articles:
             helpers.makeDirectory(os.path.dirname(outputFileName))
 
             # only download if necessary
-            if not self.existsInOutputDirectory(fileName):
-                #debug
+            if os.path.exists(outputFileName):
+                logging.info(f'Already done. Output file {outputFileName} already exists.')
+                return
+            elif not self.existsInOutputDirectory(fileName):
                 success = self.downloader.downloadBinaryFile(pdfUrl, outputFileName)
                 print('')
 
