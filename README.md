@@ -28,6 +28,7 @@ pip install wget
 3. Edit `input_search_terms.txt` to contain your desired search terms. Each line is a search term.
 4. Run `python articles.py -w input_websites.txt -s input_search_terms.txt -d ~/Desktop/WebSearch_010820`. The `-d` argument allows you to resume a partially completed run of this app.
 5. Depending on your system you may need run `python3` instead of `python`.
+6. To run multiple instances at the same time, run `bash run.sh`. That will run one instance for each site. That means it will finish four time faster.
 
 ## Command line parameters
 
