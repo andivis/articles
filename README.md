@@ -29,6 +29,12 @@ pip install wget
 4. Run `python articles.py -w input_websites.txt -s input_search_terms.txt -d ~/Desktop/WebSearch_010820`. The `-d` argument allows you to resume a partially completed run of this app.
 5. Depending on your system you may need run `python3` instead of `python`.
 
+## Command line parameters
+
+- `-w`: file containing the list of websites. Default: `input_websites.txt`.
+- `-s`: file containing the list of search terms. Default: `input_search_terms.txt`.
+- `-d`: where to write the pdf files and logs. Default: `~/Desktop/WebSearch_(current date)`.
+
 ## Options
 
 `options.ini` accepts the following options:
