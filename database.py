@@ -6,6 +6,8 @@
 
 import sqlite3
 import logging
+import time
+import random
 
 ###########################################################################
 #
@@ -143,7 +145,8 @@ class Database:
                 limitPart = f' limit {limit}'
 
             query = f"SELECT {columns} from {table}{wherePart}{orderByPart}{limitPart};"
-            self.cursor.execute(query)
+            
+            self.executeWithRetries(query)
 
             rows = self.cursor.fetchall()
             for row in rows:
@@ -229,13 +232,21 @@ class Database:
         for i in range(0, maximumTries):        
             try:
                 self.cursor.execute(query)
-
+                
                 # if it's here it means it succeeded
                 break
-            except Exception as e:
-                logging.error(f'Database error. Retrying. {i + 1} of {maximumTries}.')
-                logging.error(e)
-
+            except sqlite3.OperationalError as e:
+                if str(e) == 'database is locked':
+                    logging.error(f'Database error. Retrying. {i + 1} of {maximumTries}.')
+                    logging.error(e)
+                
+                    seconds = random.randrange(100, 1000) / 1000
+                    time.sleep(seconds)
+                else:
+                    logging.error(f'Database error:')
+                    logging.error(e)
+                    break
+        
         self.conn.commit()
 
     def insert(self, table, item):
@@ -286,13 +297,7 @@ class Database:
     #######################################################################
 
     def execute(self, statement):
-        try:
-            self.cursor.execute(statement)
-        except Exception as e:
-            logging.error('Database error:')
-            logging.error(e)
-
-        self.conn.commit()
+        self.executeWithRetries(statement)
 
     def query(self,sql):
         self.cursor.execute(sql)
