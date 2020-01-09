@@ -448,9 +448,19 @@ class Downloader:
         return response.text
 
     def downloadBinaryFile(self, url, destinationFileName):       
+        result = False
+        
         import wget
+        
         logging.debug(f'Download {url} to {destinationFileName}')
-        wget.download(url, destinationFileName)
+        
+        try:
+            wget.download(url, destinationFileName)
+            result = True
+        except Exception as e:
+            logging.error(e)
+        
+        return result
 
     def getXpath(self, page, xpath, firstOnly=False, attribute=None):
         result = []
@@ -480,6 +490,24 @@ class Downloader:
             logging.error(e)
 
         return result
+
+    # xpath should start with "./" instead of "//"
+    def getXpathInElement(self, rootElement, xpath, attribute=None):
+        result = ''
+
+        try:
+            elements = rootElement.xpath(xpath)
+
+            if len(elements) > 0:
+                if not attribute:
+                    result = elements[0].text_content()
+                else:
+                    result = elements[0].attrib[attribute]
+        except Exception as e:
+            logging.error(e)
+
+        return result
+
 
     def __init__(self):
         self.userAgentList = [

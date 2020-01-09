@@ -26,13 +26,12 @@ pip install wget
 1. Open a terminal window. Cd to the directory containing `articles.py`. It's where you cloned the repository before.
 2. Optionally, edit the `options.ini` file to your liking
 3. Edit `input_search_terms.txt` to contain your desired search terms. Each line is a search term.
-3. Run `python articles.py -w input_websites.txt -s input_search_terms.txt`
-4. Depending on your system you may need run `python3` instead of `python`.
+4. Run `python articles.py -w input_websites.txt -s input_search_terms.txt -d ~/Desktop/WebSearch_010820`. The `-d` argument allows you to resume a partially completed run of this app.
+5. Depending on your system you may need run `python3` instead of `python`.
 
 ## Options
 
 `options.ini` accepts the following options:
 
 - `maximumResultsPerKeyword`: How many pdf's to download for a given site/keyword combination. -1 means no limit. Default 25000.
-- `onlyOneCopyPerPdf`: Only download a pdf if it does not exist anywhere in the output directory, including previous runs of this app. 1 means yes. 0 means no. Default 1.
-- `minimumHoursBetweenRuns`: How many hours to wait before repeating a given site/keyword combination. Default is 12.
+- `directoryToCheckForDuplicates`: Only download a pdf if it does not exist anywhere in this directory. Blank means don't check any directory.

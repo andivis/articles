@@ -69,6 +69,7 @@ class Articles:
                     'url': f'https://www.biorxiv.org/search/{keywordWithPlusSigns}%20numresults%3A75%20sort%3Arelevance-rank',
                     'resultsXpath': "//a[@class = 'highwire-cite-linked-title']",
                     'totalResultsXpath': "//*[@id = 'search-summary-wrapper']",
+                    'titleXpath': "./span[@class = 'highwire-cite-title']",
                     'urlPrefix': 'https://www.biorxiv.org',
                     'afterFirstPageSuffix': '?page={}'
                 }
@@ -77,6 +78,7 @@ class Articles:
                     'url': f'https://www.medrxiv.org/search/{keywordWithPlusSigns}%20numresults%3A75%20sort%3Arelevance-rank',
                     'resultsXpath': "//a[@class = 'highwire-cite-linked-title']",
                     'totalResultsXpath': "//*[@id = 'search-summary-wrapper']",
+                    'titleXpath': "./span[@class = 'highwire-cite-title']",
                     'urlPrefix': 'https://www.medrxiv.org',
                     'afterFirstPageSuffix': '?page={}'
                 }
@@ -89,7 +91,7 @@ class Articles:
         for article in articles:
             logging.info(f'Site {self.onItemIndex + 1} of {len(self.sites)}: {siteName}. Keyword {self.onKeywordIndex + 1} of {len(self.keywords)}: {keyword}. Downloading item {i + 1} of {len(articles)}: {article[0]}.')
                         
-            self.outputResult(site, keyword, article)
+            self.outputResult(site, keyword, i + 1, article)
 
             i += 1
 
@@ -156,8 +158,10 @@ class Articles:
         if not self.totalResults and total:
             self.totalResults = int(total)
 
+            self.showResultCount()
+
             # log the search now because the download might fail
-            self.logToCsvFiles(site, keyword, '', True, False)
+            self.logToCsvFiles(site, keyword, -1, [], '', False, True, False)
 
         urls = []
         i = resultCount
@@ -178,21 +182,34 @@ class Articles:
 
             urls.append(url)
 
-            logging.info(f'Results: {len(urls)}. Url: {url}.')
-
             pdfUrl = url + '.full.pdf'
                 
             articleId = self.getLastAfterSplit(url, '/')
 
+            title = self.downloader.getXpathInElement(element, siteData['titleXpath'])
+
+            shortTitle = title
+
+            if len(shortTitle) > 50:
+                shortTitle = shortTitle[0:50] + '...'
+
+            logging.info(f'Results: {len(urls)}. Url: {url}. Title: {shortTitle}.')
+            
             # this allows us to know when we reached the final page
             if self.isInArticleList(existingResults, articleId):
                 continue
 
-            result = [articleId, pdfUrl]
+            result = [articleId, pdfUrl, title]
             
             results.append(result)
 
         return results
+
+    def showResultCount(self):
+        maximumResults = self.options['maximumResultsPerKeyword']
+
+        logging.info(f'Total number of results available: {self.totalResults}. Number of desired results: {maximumResults}.' )
+
 
     def isInArticleList(self, articleList, articleId):
         result = False
@@ -216,9 +233,11 @@ class Articles:
 
         if not self.totalResults:
             self.totalResults = response['esearchresult']['count']
-
+            
+            self.showResultCount()
+            
             # log the search now because the download might fail
-            self.logToCsvFiles(site, keyword, '', True, False)
+            self.logToCsvFiles(site, keyword, -1, [], '', False, True, False)
 
         i = resultCount
         
@@ -234,12 +253,19 @@ class Articles:
             
             summaryResponse = api.get(f'/entrez/eutils/esummary.fcgi?db=pubmed&id={item}&retmode=json')
 
+            title = ''
+
             if 'result' in summaryResponse and item in summaryResponse['result']:
                 articleSummary = summaryResponse['result'][item]
                 
-                title = articleSummary.get('title', '')[0:50]
+                title = articleSummary.get('title', '')
+                
+                shortTitle = title
 
-                logging.info(f'Results: {i}. Id: {item}. Title: {title}...')
+                if len(shortTitle) > 50:
+                    shortTitle = shortTitle[0:50] + '...'
+
+                logging.info(f'Results: {i}. Id: {item}. Title: {shortTitle}.')
 
                 # write these results to a separate csv
                 self.logNihResultToCsvFile(site, keyword, articleSummary)
@@ -249,7 +275,7 @@ class Articles:
             if not pdfUrl:
                 continue
             
-            result = [item, pdfUrl]
+            result = [item, pdfUrl, title]
             
             results.append(result)
 
@@ -288,20 +314,30 @@ class Articles:
             pdfUrl = item.get('pdf_url', '')
 
             if not pdfUrl:
-                continue
-
-            result = [id, pdfUrl]
-            
-            results.append(result)
+                siteName = helpers.getDomainName(site.get('url', ''))
+                message = f'No pdf file found on {siteName} for {id}'
+                logging.error(message)
+                pdfUrl = f'Error: {message}'
 
             title = item.get('title', '')
 
-            logging.info(f'Results: {len(results)}. Id: {id}. Title: {title}.')
+            shortTitle = title
+
+            if len(shortTitle) > 50:
+                shortTitle = shortTitle[0:50] + '...'
+
+            logging.info(f'Results: {len(results)}. Id: {id}. Title: {shortTitle}.')
+
+            result = [id, pdfUrl, title]
+            
+            results.append(result)
 
         self.totalResults = len(results)
 
+        self.showResultCount()
+
         # log the search now because the download might fail
-        self.logToCsvFiles(site, keyword, '', True, False)
+        self.logToCsvFiles(site, keyword, -1, [], '', False, True, False)
 
         return results
 
@@ -338,56 +374,70 @@ class Articles:
         
         return results
 
-    def outputResult(self, site, keyword, article):
+    def outputResult(self, site, keyword, resultNumber, article):
         siteName = helpers.getDomainName(site.get('url', ''))
 
         articleId = article[0]
         pdfUrl = article[1]
 
-        subdirectory2 = f'{siteName}_{self.dateStarted}'
-        fileName = f'{articleId}.pdf'
+        downloaded = 'Not downloaded'
 
-        outputFileName = os.path.join(self.options['outputDirectory'], self.subdirectory, subdirectory2, fileName)
+        if pdfUrl.startswith('Error: '):
+            outputFileName = 'Nan'
 
-        helpers.makeDirectory(os.path.dirname(outputFileName))
+            # it's the error message
+            downloaded = pdfUrl
+        else:
+            subdirectory = f'{siteName}'
+            fileName = f'{articleId}.pdf'
 
-        if self.existsInOutputDirectory(fileName):
-            return
+            outputFileName = os.path.join(self.options['outputDirectory'], subdirectory, fileName)
 
-        self.downloader.downloadBinaryFile(pdfUrl, outputFileName)
+            helpers.makeDirectory(os.path.dirname(outputFileName))
 
-        print('')
+            # only download if necessary
+            if not self.existsInOutputDirectory(fileName):
+                #debug
+                success = self.downloader.downloadBinaryFile(pdfUrl, outputFileName)
+                print('')
 
-        self.logToCsvFiles(site, keyword, outputFileName, False, True)
+                if success:
+                    downloaded = 'Downloaded successfully'
+                else:
+                    downloaded = 'Download failed'
+                    outputFileName = 'NaN'
+        
+        # log to the csv file anyway
+        self.logToCsvFiles(site, keyword, resultNumber, article, outputFileName, downloaded, False, True)
 
         self.waitBetween()
 
     # log to search log and/or pdf log
-    def logToCsvFiles(self, site, keyword, outputFileName, searchLog, pdfLog):
-        outputDirectory = os.path.join(self.options['outputDirectory'], self.subdirectory)
+    def logToCsvFiles(self, site, keyword, resultNumber, article, outputFileName, downloaded, searchLog, pdfLog):
+        helpers.makeDirectory(self.options['outputDirectory'])
         
-        now = datetime.datetime.now().strftime('%m%d%y-%H%M%S')
-        
-        dateUnderscore = self.dateStarted.replace('-', '_')
-
-        searchLogFileName = f'output_searchlog_{dateUnderscore}.csv'
-        pdfLogFileName = f'output_pdf_log_{self.dateStarted}.csv'
-        
-        searchLogFileName = os.path.join(outputDirectory, searchLogFileName)
-        pdfLogFileName = os.path.join(outputDirectory, pdfLogFileName)
-
-        helpers.makeDirectory(outputDirectory)
+        searchLogFileName = os.path.join(self.options['outputDirectory'], 'output_searchlog.csv')
+        pdfLogFileName = os.path.join(self.options['outputDirectory'], 'output_pdf_log.csv')
         
         if searchLog and not os.path.exists(searchLogFileName):
-            helpers.toFile('Date-Time,Search terms,Websites,Number of papers', searchLogFileName)
+            helpers.toFile('Date-Time,Search terms,Websites,Number of papers,Requested maximumResultsPerKeyword', searchLogFileName)
 
         if pdfLog and not os.path.exists(pdfLogFileName):
-            helpers.toFile('DateTime,SearchTerms,Website,FilenamePath', pdfLogFileName)
-        
+            helpers.toFile('Datetime, Search terms, Website, Result number, Total results requested, ID number, Title, Downloaded?, FileNamePath', pdfLogFileName)
+
+        now = datetime.datetime.now().strftime('%m%d%y-%H%M%S')
+
         siteName = site.get('name', '')
 
-        searchLogLine = [now, keyword, siteName, self.totalResults]
-        pdfLogLine = [now, keyword, siteName, outputFileName]
+        articleId = ''
+        title = ''
+
+        if len(article) >= 3:
+            articleId = article[0]
+            title = article[2]
+
+        searchLogLine = [now, keyword, siteName, self.totalResults, self.options['maximumResultsPerKeyword']]
+        pdfLogLine = [now, keyword, siteName, resultNumber, self.options['maximumResultsPerKeyword'], articleId, title, downloaded, outputFileName]
 
         if searchLog:
             self.appendCsvFile(searchLogLine, searchLogFileName)
@@ -397,14 +447,12 @@ class Articles:
 
     # writes article details to a csv file
     def logNihResultToCsvFile(self, site, keyword, article):
-        outputDirectory = os.path.join(self.options['outputDirectory'], self.subdirectory)        
-
         name = site.get('name', '').lower()
         
-        csvFileName = os.path.join(outputDirectory, f'{name}_results.csv')
+        csvFileName = os.path.join(self.options['outputDirectory'], f'{name}_results.csv')
         
         if not os.path.exists(csvFileName):
-            helpers.toFile('Title,URL,Description,Details,ShortDetails,Resource,Type,Identifiers,Db,EntrezUID,Properties', csvFileName)
+            helpers.toFile('DateTime,Keyword,Title,URL,Description,Details,ShortDetails,Resource,Type,Identifiers,Db,EntrezUID,Properties', csvFileName)
 
         siteName = site.get('name', '')
 
@@ -423,6 +471,8 @@ class Articles:
         details = article.get('fulljournalname', '') + '. ' + article.get('elocationid', '') + '. ' + publicationTypes + '.'
         
         line = [
+            datetime.datetime.now().strftime('%m%d%y-%H%M%S'),
+            keyword,
             article.get('title', ''),
             f'/pubmed/{articleId}',
             description,
@@ -447,7 +497,7 @@ class Articles:
     def existsInOutputDirectory(self, fileName):
         result = False;
 
-        if self.options['onlyOneCopyPerPdf'] != 1:
+        if self.options['directoryToCheckForDuplicates'] != 1:
             return result
         
         for file in helpers.listFiles(self.options['outputDirectory'], False):
@@ -482,7 +532,10 @@ class Articles:
             logging.error(e)
 
         if not result:
-            logging.error(f'No result found on {api.urlPrefix} for {articleId}')
+            siteName = helpers.getDomainName(api.urlPrefix)
+            message = f'No result found on {siteName} for {articleId}'
+            logging.error(message)
+            result = f'Error: {message}'
 
         return result
 
@@ -494,16 +547,14 @@ class Articles:
 
         siteName = helpers.getDomainName(site.get('url', ''))
 
-        hours = self.options['minimumHoursBetweenRuns']
-
-        minimumDate = helpers.getDateStringSecondsAgo(hours * 60 * 60, True)
-
         keyword = keyword.replace("'", "''")
 
-        gmDateLastCompleted = self.database.getFirst('history', '*', f"siteName= '{siteName}' and keyword = '{keyword}' and gmDateLastCompleted >= '{minimumDate}'", '', '')
+        directory = self.options['outputDirectory']
 
-        if gmDateLastCompleted:
-            logging.info(f'Skipping. Too soon since last completed this item.')
+        siteName = self.database.getFirst('history', 'siteName', f"siteName= '{siteName}' and keyword = '{keyword}' and directory = '{directory}'", '', '')
+
+        if siteName:
+            logging.info(f'Skipping. Already done this item.')
             result = True
 
         return result
@@ -517,7 +568,8 @@ class Articles:
         item = {
             'siteName': siteName,
             'keyword': keyword,
-            'gmDateLastCompleted': str(datetime.datetime.utcnow())
+            'directory': self.options['outputDirectory'],
+            'gmDate': str(datetime.datetime.utcnow())
         }
 
         logging.debug(f'Inserting into database')
@@ -541,6 +593,14 @@ class Articles:
 
         self.options[optionName] = helpers.getArgument(parameterName, False)
 
+    def removeOldEntries(self):
+        maximumDaysToKeepItems = self.options['maximumDaysToKeepItems']
+        
+        minimumDate = helpers.getDateStringSecondsAgo(maximumDaysToKeepItems * 24 * 60 * 60, True)
+        
+        logging.debug(f'Deleting entries older than {maximumDaysToKeepItems} days')
+        self.database.execute(f"delete from history where gmDate < '{minimumDate}'")
+
     def cleanUp(self):
         self.database.close()
 
@@ -556,13 +616,12 @@ class Articles:
 
         # to store the time we finished given sites/keyword combinations
         self.database = Database('database.sqlite')
-        self.database.execute('create table if not exists history ( siteName text, keyword text, gmDateLastCompleted text, primary key(siteName, keyword) )')
+        self.database.execute('create table if not exists history ( siteName text, keyword text, directory text, gmDate text, primary key(siteName, keyword, directory) )')
 
         self.downloader = Downloader()
-        self.dateStarted = datetime.datetime.now().strftime('%m%d%y-%H%M%S')
-        self.subdirectory = f'WebSearch_{self.dateStarted}'
-
-        outputDirectory = os.path.join(str(Path.home()), 'Desktop')
+        self.dateStarted = datetime.datetime.now().strftime('%m%d%y')
+        
+        outputDirectory = os.path.join(str(Path.home()), 'Desktop', f'WebSearch_{self.dateStarted}')
 
         # set default options
         self.options = {
@@ -570,10 +629,9 @@ class Articles:
             'inputKeywordsFile': 'input_search_terms.txt',
             'outputDirectory': outputDirectory,
             'secondsBetweenItems': 0,
-            'minimumHoursBetweenRuns': 12,
-            'maximumDaysToKeepItems': 60,
+            'maximumDaysToKeepItems': 90,
             'maximumResultsPerKeyword': 25000,
-            'onlyOneCopyPerPdf': 1
+            'directoryToCheckForDuplicates': ''
         }
 
         # read the options file
@@ -586,6 +644,7 @@ class Articles:
         # read command line parameters
         self.setOptionFromParameter('inputWebsitesFile', '-w')
         self.setOptionFromParameter('inputKeywordsFile', '-s')
+        self.setOptionFromParameter('outputDirectory', '-d')
 
         # read websites file
         file = helpers.getFile(self.options['inputWebsitesFile'])
@@ -611,6 +670,8 @@ class Articles:
 
         for line in list:
             self.keywords.append(helpers.findBetween(line, "'", "'"))
+
+        self.removeOldEntries()
 
 articles = Articles()
 articles.run()
