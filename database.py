@@ -151,6 +151,8 @@ class Database:
         except Exception as e:
             logging.error(e)
 
+        self.conn.commit()
+
         return result
 
     def getFirst(self,table,columns,where,orderBy,orderType):
@@ -220,6 +222,22 @@ class Database:
             logging.error('Database error:')
             logging.error(e)
 
+
+    def executeWithRetries(self, query):
+        maximumTries = 1000
+
+        for i in range(0, maximumTries):        
+            try:
+                self.cursor.execute(query)
+
+                # if it's here it means it succeeded
+                break
+            except Exception as e:
+                logging.error(f'Database error. Retrying. {i + 1} of {maximumTries}.')
+                logging.error(e)
+
+        self.conn.commit()
+
     def insert(self, table, item):
         try:
             if not item:
@@ -251,13 +269,10 @@ class Database:
 
             query = "INSERT OR REPLACE INTO {0} ({1}) VALUES ({2});".format(table,columns,data)
 
-            self.cursor.execute(query)
+            self.executeWithRetries(query)
         except Exception as e:
-            logging.error('Database error:')
+            logging.error(f'Database error:')
             logging.error(e)
-
-        self.conn.commit()
-
 
     #######################################################################
     #
@@ -276,6 +291,8 @@ class Database:
         except Exception as e:
             logging.error('Database error:')
             logging.error(e)
+
+        self.conn.commit()
 
     def query(self,sql):
         self.cursor.execute(sql)

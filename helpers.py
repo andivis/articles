@@ -12,11 +12,20 @@ import json
 from logging.handlers import RotatingFileHandler
 from collections import OrderedDict
 
-def getFile(fileName):
+def getFile(fileName, encoding=None):
     if not os.path.isfile(fileName):
         return ""
 
-    f = open(fileName, "r")
+    f = open(fileName, "r", encoding='utf-8')
+    
+    return f.read()
+
+def getBinaryFile(fileName):
+    if not os.path.isfile(fileName):
+        return ""
+
+    f = open(fileName, "rb")
+    
     return f.read()
 
 
@@ -32,6 +41,9 @@ def toFile(s, fileName):
     with io.open(fileName, "w", encoding="utf-8") as text_file:
         print(s, file=text_file)
 
+def toBinaryFile(s, fileName):
+    with io.open(fileName, "wb") as file:
+        file.write(s)
 
 def appendToFile(s, fileName):
     with io.open(fileName, "a", encoding="utf-8") as text_file:
@@ -296,19 +308,21 @@ def setUpLogging():
     rootLogger = logging.getLogger()
     rootLogger.setLevel(logging.INFO)
 
-    if '--debug' in sys.argv:
-        rootLogger.setLevel(logging.DEBUG)
-
     consoleHandler = logging.StreamHandler()
     consoleHandler.setFormatter(logFormatter)        
     rootLogger.addHandler(consoleHandler)
 
-    logDirectory = 'logs'
+    logFileName = os.path.join('logs', 'log.txt')
 
-    makeDirectory(logDirectory)
+    if '--debug' in sys.argv:
+        # clear the file
+        open(logFileName, 'w').close()
+        rootLogger.setLevel(logging.DEBUG)
+
+    makeDirectory(os.path.dirname(logFileName))
 
     # 2 rotating files of maximum 1 million bytes each        
-    fileHandler = RotatingFileHandler(f'{logDirectory}/log.txt', maxBytes=1000 * 1000, backupCount=1, encoding='utf-8')
+    fileHandler = RotatingFileHandler(logFileName, maxBytes=1000 * 1000, backupCount=1, encoding='utf-8')
     fileHandler.setFormatter(logFormatter)
     rootLogger.addHandler(fileHandler)
 
@@ -365,7 +379,12 @@ class Api:
 
             response = requests.post(self.urlPrefix + url, headers=self.headers, proxies=self.proxies, data=data)
 
-            if responseIsJson:
+            logging.debug(response)
+            logging.debug(response.headers)
+
+            if response.headers['Content-Type'] == 'application/pdf' or response.headers['content-type'] == 'application/pdf':
+                result = response.content
+            elif responseIsJson:
                 result = json.loads(response.text)
             else:
                 result = response.text

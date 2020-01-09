@@ -250,7 +250,7 @@ class Articles:
                 continue
 
             i += 1
-            
+
             summaryResponse = api.get(f'/entrez/eutils/esummary.fcgi?db=pubmed&id={item}&retmode=json')
 
             title = ''
@@ -270,7 +270,7 @@ class Articles:
                 # write these results to a separate csv
                 self.logNihResultToCsvFile(site, keyword, articleSummary)
 
-            pdfUrl = self.getPdfUrlFromSciHub(item)
+            pdfUrl = self.getPdfUrlFromSciHub(site, item)
 
             if not pdfUrl:
                 continue
@@ -395,15 +395,23 @@ class Articles:
 
             helpers.makeDirectory(os.path.dirname(outputFileName))
 
+            # no need to download again. still need to write to csv file.
+            if pdfUrl == 'binary':
+                logging.debug(f'Already wrote the binary file to {outputFileName}')
+                downloaded = 'Downloaded successfully'
             # only download if necessary
-            if os.path.exists(outputFileName):
+            elif os.path.exists(outputFileName):
                 logging.info(f'Already done. Output file {outputFileName} already exists.')
                 return
-            elif not self.existsInOutputDirectory(fileName):
+            elif not self.existsInDirectory(fileName):
+                logging.debug(f'Downloading. Output file does not exist.')
                 success = self.downloader.downloadBinaryFile(pdfUrl, outputFileName)
                 print('')
 
-                if success:
+                if self.handleCaptcha(siteName, outputFileName):
+                    downloaded = 'Captcha'
+                    outputFileName = 'NaN'
+                elif success:
                     downloaded = 'Downloaded successfully'
                 else:
                     downloaded = 'Download failed'
@@ -496,7 +504,31 @@ class Articles:
             writer = csv.writer(csv_file, delimiter=',')
             writer.writerow(line)
 
-    def existsInOutputDirectory(self, fileName):
+    def handleCaptcha(self, siteName, outputFileName):
+        result = False
+
+        if siteName != 'nih.gov':
+            return result
+
+        try:
+            statinfo = os.stat(outputFileName)
+        
+            if statinfo.st_size < 1000 * 1000:
+                file = helpers.getBinaryFile(outputFileName)
+
+                if not file.startswith(b'%PDF'):
+                    logging.error(f'Can\'t download this file. There is a captcha.')
+
+                    # delete the file
+                    if os.path.exists(outputFileName):
+                        os.remove(outputFileName)
+                    result = True
+        except Exception as e:
+            logging.error(e)
+
+        return result
+
+    def existsInDirectory(self, fileName):
         result = False;
 
         if self.options['directoryToCheckForDuplicates'] != 1:
@@ -511,10 +543,13 @@ class Articles:
 
         return result
 
-    def getPdfUrlFromSciHub(self, articleId):
+    def getPdfUrlFromSciHub(self, site, articleId):
         result = ''
 
         api = Api('https://sci-hub.tw')
+
+        #debug
+        articleId = '31719010'
 
         body = {
             'sci-hub-plugin-check': '',
@@ -524,9 +559,24 @@ class Articles:
         try:
             response = api.post('/', body, False)
 
+            # sometimes it returns the pdf directly
+            if isinstance(response, bytes) and response.startswith(b'%PDF'):
+                siteName = helpers.getDomainName(site.get('url', ''))
+                outputFileName = os.path.join(self.options['outputDirectory'], siteName, f'{articleId}.pdf')
+
+                logging.debug(f'Response is a pdf file. Writing it to {outputFileName}.')
+                
+                helpers.makeDirectory(os.path.dirname(outputFileName))
+                helpers.toBinaryFile(response, outputFileName)
+
+                return 'binary'
+
             result = self.downloader.getXpath(response, "//*[@id = 'buttons']//a[contains(@onclick, '.pdf')]", True, 'onclick')
 
-            result = result.replace("location.href='", 'https:')
+            result = result.replace("location.href='", '')
+
+            if result and not result.startswith('http'):
+                result = 'https:' + result
 
             if result.endswith("'"):
                 result = result[0:-1]
@@ -638,10 +688,6 @@ class Articles:
 
         # read the options file
         helpers.setOptions('options.ini', self.options)
-
-        if '--debug' in sys.argv:
-            self.options['secondsBetweenItems'] = 3
-            self.options['maximumResultsPerKeyword'] = 2
 
         # read command line parameters
         self.setOptionFromParameter('inputWebsitesFile', '-w')
