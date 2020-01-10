@@ -12,6 +12,7 @@ import requests
 import lxml.html as lh
 from pathlib import Path
 import arxiv
+import traceback
 import helpers
 from database import Database
 from helpers import Api
@@ -43,6 +44,7 @@ class Articles:
             except Exception as e:
                 # if something goes wrong, we just go to next keyword
                 logging.error(f'Skipping. Something went wrong.')
+                logging.debug(traceback.format_exc())                
                 logging.error(e)
 
     def lookUpItem(self, site, keyword):
