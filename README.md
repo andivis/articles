@@ -41,4 +41,4 @@ pip install wget
 `options.ini` accepts the following options:
 
 - `maximumResultsPerKeyword`: How many pdf's to download for a given site/keyword combination. -1 means no limit. Default 25000.
-- `directoryToCheckForDuplicates`: Only download a pdf if it does not exist anywhere in this directory. Blank means don't check any directory.
+- `directoryToCheckForDuplicates`: Only download a pdf if it does not exist anywhere in this directory. Blank means don't check any directory. No quotes on directory name.

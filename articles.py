@@ -548,9 +548,6 @@ class Articles:
 
         api = Api('https://sci-hub.tw')
 
-        #debug
-        articleId = '31719010'
-
         body = {
             'sci-hub-plugin-check': '',
             'request': articleId
