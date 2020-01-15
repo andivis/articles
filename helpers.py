@@ -476,7 +476,8 @@ class Downloader:
             response = requests.get(url, headers=self.headers, proxies=self.proxies)
             response.encoding = 'utf-8'
         except Exception as e:
-            response = ''
+            logging.error(e)
+            return ''
         
         return response.text
 

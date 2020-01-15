@@ -1,1 +1,1 @@
-['Pubmed:https://www.ncbi.nlm.nih.gov/pubmed']
+Pubmed https://www.ncbi.nlm.nih.gov/pubmed

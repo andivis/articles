@@ -1,1 +1,1 @@
-['Arxiv:https://arxiv.org/']
+Arxiv https://arxiv.org

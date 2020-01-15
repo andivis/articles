@@ -1,1 +1,1 @@
-['Medrxiv:https://www.medrxiv.org']
+Medrxiv https://www.medrxiv.org

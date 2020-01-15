@@ -36,6 +36,7 @@ class Articles:
         if self.options.get('useIdLists', ''):
             inputType = 'ID list'
 
+        self.onKeywordIndex = 0
         self.keywords = self.readInputFile(item, inputType)
 
         for keyword in self.keywords:
@@ -43,6 +44,7 @@ class Articles:
         
             # already done?
             if self.isDone(item, keyword):
+                self.onKeywordIndex += 1
                 continue
 
             try:
@@ -54,6 +56,8 @@ class Articles:
                 logging.error(f'Skipping. Something went wrong.')
                 logging.debug(traceback.format_exc())                
                 logging.error(e)
+
+            self.onKeywordIndex += 1
 
     def lookUpItem(self, site, keyword):
         siteName = helpers.getDomainName(site.get('url', ''))
@@ -72,7 +76,8 @@ class Articles:
         else:
             siteData = {}
             
-            keywordWithPlusSigns = keyword.replace(' ', '+')
+            keywordWithPlusSigns = urllib.parse.quote_plus(keyword);
+            keywordWithPlusSigns = keywordWithPlusSigns.replace('%20', '+')
             
             if siteName == 'biorxiv.org':
                 siteData = {
@@ -82,7 +87,8 @@ class Articles:
                     'titleXpath': "./span[@class = 'highwire-cite-title']",
                     'urlPrefix': 'https://www.biorxiv.org',
                     'afterFirstPageSuffix': '?page={}',
-                    'abstractXpath' : "//*[@id = 'abstract-1']//*[@id = 'p-2']"
+                    'abstractXpath' : "//*[@id = 'abstract-1']//*[@id = 'p-2']",
+                    'titleInDetailsPageXpath' : "//*[@id = 'page-title']"
                 }
             elif siteName == 'medrxiv.org':
                 siteData = {
@@ -92,7 +98,8 @@ class Articles:
                     'titleXpath': "./span[@class = 'highwire-cite-title']",
                     'urlPrefix': 'https://www.medrxiv.org',
                     'afterFirstPageSuffix': '?page={}',
-                    'abstractXpath' : "//*[@id = 'abstract-1']//*[@id = 'p-2']"
+                    'abstractXpath' : "//*[@id = 'abstract-1']//*[@id = 'p-2']",
+                    'titleInDetailsPageXpath' : "//*[@id = 'page-title']"
                 }
 
             articles = self.genericSearch(site, keyword, siteData)
@@ -160,12 +167,26 @@ class Articles:
             suffix = siteData.get('afterFirstPageSuffix', '')
             suffix = suffix.format(pageIndex)
 
-        page = self.downloader.get(siteData['url'] + suffix)
+        elements = []
+        total = 0
 
-        elements = self.downloader.getXpath(page, siteData['resultsXpath'])
+        if not self.options['useIdLists']:
+            page = self.downloader.get(siteData['url'] + suffix)
+
+            elements = self.downloader.getXpath(page, siteData['resultsXpath'])
         
-        total = self.downloader.getXpath(page, siteData['totalResultsXpath'], True)
-        total = helpers.numbersOnly(total)
+            total = self.downloader.getXpath(page, siteData['totalResultsXpath'], True)
+            total = helpers.numbersOnly(total)
+        else:
+            class Element:
+                def __init__(self, keyword):
+                    self.attrib = {
+                        'href': '/content/10.1101/' + keyword
+                    }
+
+            element = Element(keyword)
+            elements = [element]
+            total = 1
 
         if not self.totalResults and total:
             self.totalResults = int(total)
@@ -198,14 +219,22 @@ class Articles:
                 
             articleId = self.getLastAfterSplit(url, '/')
 
-            title = self.downloader.getXpathInElement(element, siteData['titleXpath'])
+            title = ''
+            
+            if not self.options['useIdLists']:
+                title = self.downloader.getXpathInElement(element, siteData['titleXpath'])
+
+            information = self.getInformationFromDetailsPage(siteData, url)
+
+            if not title:
+                title = information.get('title', '')
+
+            abstract = information.get('abstract', '')
 
             shortTitle = title
 
             if len(shortTitle) > 50:
                 shortTitle = shortTitle[0:50] + '...'
-
-            abstract = self.getGenericAbstract(siteData, url)
 
             logging.info(f'Results: {len(urls)}. Url: {url}. Title: {shortTitle}.')
             
@@ -219,10 +248,18 @@ class Articles:
 
         return results
 
-    def getGenericAbstract(self, siteData, url):
+    def getInformationFromDetailsPage(self, siteData, url):
         page = self.downloader.get(url)
 
-        return self.downloader.getXpath(page, siteData['abstractXpath'], True)
+        title = self.downloader.getXpath(page, siteData['titleInDetailsPageXpath'], True)
+        abstract = self.downloader.getXpath(page, siteData['abstractXpath'], True)
+
+        result = {
+            'title': title,
+            'abstract': abstract
+        }
+
+        return result
 
     def showResultCount(self):
         maximumResults = self.options['maximumResultsPerKeyword']
@@ -243,30 +280,35 @@ class Articles:
     def getNihPage(self, site, keyword, api, pageIndex, existingResults, resultCount):
         results = []
 
-        if self.options.get('useIdLists', ''):
-            if pageIndex == 0:
-                return [keyword]
-            else:
-                return []
-
-        logging.info(f'Getting page {pageIndex + 1}')
-
         resultsPerPage = 1000
         start = pageIndex * resultsPerPage
+        response = ''
 
-        response = api.get(f'/entrez/eutils/esearch.fcgi?db=pubmed&retmode=json&retstart={start}&retmax={resultsPerPage}&term={keyword}')
+        if not self.options.get('useIdLists', ''):
+            logging.info(f'Getting page {pageIndex + 1}')
+    
+            response = api.get(f'/entrez/eutils/esearch.fcgi?db=pubmed&retmode=json&retstart={start}&retmax={resultsPerPage}&term={keyword}')
 
-        if not response:
-            logging.error('No response')
-            return
+            if not response:
+                logging.error('No response')
+                return []
 
-        if not self.totalResults:
-            self.totalResults = response['esearchresult']['count']
+            if not self.totalResults:
+                self.totalResults = response['esearchresult']['count']
             
-            self.showResultCount()
+                self.showResultCount()
             
-            # log the search now because the download might fail
-            self.logToCsvFiles(site, keyword, -1, [], '', False, True, False)
+                # log the search now because the download might fail
+                self.logToCsvFiles(site, keyword, -1, [], '', False, True, False)
+        else:
+            if pageIndex == 0:
+                response = {
+                    'esearchresult': {
+                        'idlist': [keyword]
+                    }
+                }
+            else:
+                return []
 
         i = resultCount
         
@@ -370,11 +412,11 @@ class Articles:
 
             abstract = item.get('summary', '')
 
-            logging.info(f'Results: {len(results)}. Id: {id}. Title: {shortTitle}.')
-
             result = [id, pdfUrl, title, abstract]
             
             results.append(result)
+
+            logging.info(f'Results: {len(results)}. Id: {id}. Title: {shortTitle}.')
 
         self.totalResults = len(results)
 
@@ -510,6 +552,7 @@ class Articles:
         csvFileName = os.path.join(self.options['outputDirectory'], f'{name}_results.csv')
         
         if not os.path.exists(csvFileName):
+            helpers.makeDirectory(os.path.dirname(csvFileName))
             helpers.toFile('DateTime,Keyword,Title,URL,Abstract,Description,Details,ShortDetails,Resource,Type,Identifiers,Db,EntrezUID,Properties', csvFileName)
 
         siteName = site.get('name', '')
@@ -642,9 +685,6 @@ class Articles:
     
     def isDone(self, site, keyword):
         result = False;
-
-        if self.options['useIdLists']:
-            return result
 
         siteName = helpers.getDomainName(site.get('url', ''))
 
@@ -789,6 +829,7 @@ class Articles:
         self.setOptionFromParameter('outputDirectory', '-d')
 
         if '-i' in sys.argv:
+            self.options['maximumResultsPerKeyword'] = 1
             logging.info('Downloading by ID list')
             self.options['useIdLists'] = 1
 
