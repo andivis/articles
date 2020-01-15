@@ -190,25 +190,36 @@ def getUrl(url):
 def sleep(seconds):
     time.sleep(int(seconds))
 
-def setOptions(fileName, options):
+def setOptions(fileName, options, sectionName='main'):
     try:
         if '--optionsFile' in sys.argv:
             index = sys.argv.index('--optionsFile')
             if index < len(sys.argv) - 1:
                 fileName = sys.argv[index + 1]
 
-        optionsReader = configparser.ConfigParser()
+        optionsReader = configparser.ConfigParser(interpolation=None)
+        optionsReader.optionxform = str 
         optionsReader.read(fileName)
 
-        if not 'main' in optionsReader:
-            return
+        for section in optionsReader.sections():
+            if sectionName and section != sectionName:
+                continue
 
-        for key in options:
-            if key in optionsReader['main']:
-                if optionsReader['main'][key].isdigit():
-                    options[key] = int(optionsReader['main'][key])
+            if not sectionName:
+                options[section] = {}
+
+            for key in optionsReader[section]:
+                # default value is digit?
+                if isinstance(options.get(key, ''), int):
+                    if not sectionName:                    
+                        options[section][key] = int(optionsReader[section][key])
+                    else:
+                        options[key] = int(optionsReader[section][key])
                 else:
-                    options[key] = optionsReader['main'][key]
+                    if not sectionName:
+                        options[section][key] = optionsReader[section][key]
+                    else:
+                        options[key] = optionsReader[section][key]
     except Exception as e:
         logging.error(e)
 
@@ -303,7 +314,7 @@ def addToStartup(fileName):
         file.write('cd ' + directoryName + '\n')
         file.write(r'start /min %s' % startupScriptFileName)
 
-def setUpLogging():
+def setUpLogging(fileNameSuffix=''):
     logFormatter = logging.Formatter('[%(asctime)s] [%(levelname)s] %(message)s', '%Y-%m-%d %H:%M:%S')
     rootLogger = logging.getLogger()
     rootLogger.setLevel(logging.INFO)
@@ -312,7 +323,7 @@ def setUpLogging():
     consoleHandler.setFormatter(logFormatter)        
     rootLogger.addHandler(consoleHandler)
 
-    logFileName = os.path.join('logs', 'log.txt')
+    logFileName = os.path.join('logs', f'log{fileNameSuffix}.txt')
 
     if '--debug' in sys.argv:
         # clear the file
@@ -363,7 +374,10 @@ class Api:
 
             response = requests.get(self.urlPrefix + url, headers=self.headers, proxies=self.proxies)
 
-            result = json.loads(response.text)
+            if response.text[0] == '{' or response.text[0] == '[':
+                result = json.loads(response.text)
+            else:
+                result = response.text
         except Exception as e:
             logging.error(e)
 

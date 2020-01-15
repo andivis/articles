@@ -11,8 +11,9 @@ from collections import OrderedDict
 import requests
 import lxml.html as lh
 from pathlib import Path
-import arxiv
 import traceback
+import re
+import arxiv
 import helpers
 from database import Database
 from helpers import Api
@@ -30,6 +31,13 @@ class Articles:
         self.cleanUp()
 
     def doItem(self, item):
+        inputType = 'search terms'
+
+        if self.options.get('useIdLists', ''):
+            inputType = 'ID list'
+
+        self.keywords = self.readInputFile(item, inputType)
+
         for keyword in self.keywords:
             self.showStatus(item, keyword)
         
@@ -73,7 +81,8 @@ class Articles:
                     'totalResultsXpath': "//*[@id = 'search-summary-wrapper']",
                     'titleXpath': "./span[@class = 'highwire-cite-title']",
                     'urlPrefix': 'https://www.biorxiv.org',
-                    'afterFirstPageSuffix': '?page={}'
+                    'afterFirstPageSuffix': '?page={}',
+                    'abstractXpath' : "//*[@id = 'abstract-1']//*[@id = 'p-2']"
                 }
             elif siteName == 'medrxiv.org':
                 siteData = {
@@ -82,7 +91,8 @@ class Articles:
                     'totalResultsXpath': "//*[@id = 'search-summary-wrapper']",
                     'titleXpath': "./span[@class = 'highwire-cite-title']",
                     'urlPrefix': 'https://www.medrxiv.org',
-                    'afterFirstPageSuffix': '?page={}'
+                    'afterFirstPageSuffix': '?page={}',
+                    'abstractXpath' : "//*[@id = 'abstract-1']//*[@id = 'p-2']"
                 }
 
             articles = self.genericSearch(site, keyword, siteData)
@@ -195,17 +205,24 @@ class Articles:
             if len(shortTitle) > 50:
                 shortTitle = shortTitle[0:50] + '...'
 
+            abstract = self.getGenericAbstract(siteData, url)
+
             logging.info(f'Results: {len(urls)}. Url: {url}. Title: {shortTitle}.')
             
             # this allows us to know when we reached the final page
             if self.isInArticleList(existingResults, articleId):
                 continue
 
-            result = [articleId, pdfUrl, title]
+            result = [articleId, pdfUrl, title, abstract]
             
             results.append(result)
 
         return results
+
+    def getGenericAbstract(self, siteData, url):
+        page = self.downloader.get(url)
+
+        return self.downloader.getXpath(page, siteData['abstractXpath'], True)
 
     def showResultCount(self):
         maximumResults = self.options['maximumResultsPerKeyword']
@@ -226,12 +243,22 @@ class Articles:
     def getNihPage(self, site, keyword, api, pageIndex, existingResults, resultCount):
         results = []
 
+        if self.options.get('useIdLists', ''):
+            if pageIndex == 0:
+                return [keyword]
+            else:
+                return []
+
         logging.info(f'Getting page {pageIndex + 1}')
 
         resultsPerPage = 1000
         start = pageIndex * resultsPerPage
 
         response = api.get(f'/entrez/eutils/esearch.fcgi?db=pubmed&retmode=json&retstart={start}&retmax={resultsPerPage}&term={keyword}')
+
+        if not response:
+            logging.error('No response')
+            return
 
         if not self.totalResults:
             self.totalResults = response['esearchresult']['count']
@@ -256,6 +283,7 @@ class Articles:
             summaryResponse = api.get(f'/entrez/eutils/esummary.fcgi?db=pubmed&id={item}&retmode=json')
 
             title = ''
+            abstract = ''
 
             if 'result' in summaryResponse and item in summaryResponse['result']:
                 articleSummary = summaryResponse['result'][item]
@@ -267,21 +295,31 @@ class Articles:
                 if len(shortTitle) > 50:
                     shortTitle = shortTitle[0:50] + '...'
 
+                abstract = self.getNihAbstract(api, item)
+
                 logging.info(f'Results: {i}. Id: {item}. Title: {shortTitle}.')
 
                 # write these results to a separate csv
-                self.logNihResultToCsvFile(site, keyword, articleSummary)
+                self.logNihResultToCsvFile(site, keyword, articleSummary, abstract)
 
             pdfUrl = self.getPdfUrlFromSciHub(site, item)
 
             if not pdfUrl:
                 continue
             
-            result = [item, pdfUrl, title]
+            result = [item, pdfUrl, title, abstract]
             
             results.append(result)
 
         return results
+
+    def getNihAbstract(self, api, articleId):
+        response = api.get(f'/entrez/eutils/efetch.fcgi?db=pubmed&id={articleId}&retmode=text&rettype=Abstract')
+
+        result = helpers.findBetween(response, 'Author information:', '')
+        result = helpers.findBetween(result, '\n\n', '\n\nDOI: ')
+        
+        return result
 
     def arxivSearch(self, site, keyword):
         results = []
@@ -322,15 +360,19 @@ class Articles:
                 pdfUrl = f'Error: {message}'
 
             title = item.get('title', '')
+            title = title.replace('\n', ' ')
+            title = self.squeezeWhitespace(title)
 
             shortTitle = title
 
             if len(shortTitle) > 50:
                 shortTitle = shortTitle[0:50] + '...'
 
+            abstract = item.get('summary', '')
+
             logging.info(f'Results: {len(results)}. Id: {id}. Title: {shortTitle}.')
 
-            result = [id, pdfUrl, title]
+            result = [id, pdfUrl, title, abstract]
             
             results.append(result)
 
@@ -435,7 +477,7 @@ class Articles:
             helpers.toFile('Date-Time,Search terms,Websites,Number of papers,Requested maximumResultsPerKeyword', searchLogFileName)
 
         if pdfLog and not os.path.exists(pdfLogFileName):
-            helpers.toFile('Datetime, Search terms, Website, Result number, Total results requested, ID number, Title, Downloaded?, FileNamePath', pdfLogFileName)
+            helpers.toFile('Datetime, Search terms, Website, Result number, Total results requested, ID number, Title, Abstract, Downloaded?, FileNamePath', pdfLogFileName)
 
         now = datetime.datetime.now().strftime('%m%d%y-%H%M%S')
 
@@ -443,13 +485,17 @@ class Articles:
 
         articleId = ''
         title = ''
+        abstract = ''
 
         if len(article) >= 3:
             articleId = article[0]
             title = article[2]
 
+        if len(article) >= 4:
+            abstract = article[3]
+
         searchLogLine = [now, keyword, siteName, self.totalResults, self.options['maximumResultsPerKeyword']]
-        pdfLogLine = [now, keyword, siteName, resultNumber, self.options['maximumResultsPerKeyword'], articleId, title, downloaded, outputFileName]
+        pdfLogLine = [now, keyword, siteName, resultNumber, self.options['maximumResultsPerKeyword'], articleId, title, abstract, downloaded, outputFileName]
 
         if searchLog:
             self.appendCsvFile(searchLogLine, searchLogFileName)
@@ -458,13 +504,13 @@ class Articles:
             self.appendCsvFile(pdfLogLine, pdfLogFileName)
 
     # writes article details to a csv file
-    def logNihResultToCsvFile(self, site, keyword, article):
+    def logNihResultToCsvFile(self, site, keyword, article, abstract):
         name = site.get('name', '').lower()
         
         csvFileName = os.path.join(self.options['outputDirectory'], f'{name}_results.csv')
         
         if not os.path.exists(csvFileName):
-            helpers.toFile('DateTime,Keyword,Title,URL,Description,Details,ShortDetails,Resource,Type,Identifiers,Db,EntrezUID,Properties', csvFileName)
+            helpers.toFile('DateTime,Keyword,Title,URL,Abstract,Description,Details,ShortDetails,Resource,Type,Identifiers,Db,EntrezUID,Properties', csvFileName)
 
         siteName = site.get('name', '')
 
@@ -487,6 +533,7 @@ class Articles:
             keyword,
             article.get('title', ''),
             f'/pubmed/{articleId}',
+            abstract,
             description,
             details,
             article.get('fulljournalname', '') + '. ' + helpers.findBetween(article.get('sortpubdate', ''), '', '/'),
@@ -596,6 +643,9 @@ class Articles:
     def isDone(self, site, keyword):
         result = False;
 
+        if self.options['useIdLists']:
+            return result
+
         siteName = helpers.getDomainName(site.get('url', ''))
 
         keyword = keyword.replace("'", "''")
@@ -638,6 +688,39 @@ class Articles:
 
         time.sleep(secondsBetweenItems)
 
+    def readInputFile(self, site, inputType):
+        results = []
+
+        fileName = ''
+
+        # the command line parameter takes priority
+        if self.options['inputKeywordsFile']:
+            fileName = self.options['inputKeywordsFile']
+        else:
+            siteName = site.get('name').lower()    
+            
+            if inputType == 'search terms':
+                fileName = self.keywordsFiles.get(siteName, '')
+            else:
+                fileName = self.idListFiles.get(siteName, '')
+
+        if not fileName:
+            logging.error(f'No {inputType} file specified for {siteName}.')
+            input("Press enter to continue...")
+        
+        logging.info(f'Using {inputType} file: {fileName}')
+
+        file = helpers.getFile(fileName)
+
+        for line in file.splitlines():
+            results.append(line)
+
+        if not results:
+            logging.error('No search terms or ID\'s found')
+            input("Press enter to continue...")
+
+        return results
+
     def setOptionFromParameter(self, optionName, parameterName):
         if not parameterName in sys.argv:
             return
@@ -652,13 +735,19 @@ class Articles:
         logging.debug(f'Deleting entries older than {maximumDaysToKeepItems} days')
         self.database.execute(f"delete from history where gmDate < '{minimumDate}'")
 
+    def squeezeWhitespace(self, s):
+        return re.sub(r'\s\s+', " ", s)
+
     def cleanUp(self):
         self.database.close()
 
         logging.info('Done')
 
     def initialize(self):
-        helpers.setUpLogging()
+        suffix = helpers.getArgument('-w', False)
+        suffix = '-' + helpers.fileNameOnly(suffix, False)
+
+        helpers.setUpLogging(suffix)
 
         logging.info('Starting\n')
 
@@ -677,31 +766,39 @@ class Articles:
         # set default options
         self.options = {
             'inputWebsitesFile': 'input_websites.txt',
-            'inputKeywordsFile': 'input_search_terms.txt',
+            'inputKeywordsFile': '',
             'outputDirectory': outputDirectory,
             'secondsBetweenItems': 0,
             'maximumDaysToKeepItems': 90,
             'maximumResultsPerKeyword': 25000,
-            'directoryToCheckForDuplicates': ''
+            'directoryToCheckForDuplicates': '',
+            'useIdLists': 0
         }
 
+        self.keywordsFiles = {}
+        self.idListFiles = {}
+        
         # read the options file
         helpers.setOptions('options.ini', self.options)
+        helpers.setOptions('options.ini', self.keywordsFiles, 'search terms')
+        helpers.setOptions('options.ini', self.idListFiles, 'id lists')
 
         # read command line parameters
         self.setOptionFromParameter('inputWebsitesFile', '-w')
         self.setOptionFromParameter('inputKeywordsFile', '-s')
         self.setOptionFromParameter('outputDirectory', '-d')
 
+        if '-i' in sys.argv:
+            logging.info('Downloading by ID list')
+            self.options['useIdLists'] = 1
+
         # read websites file
         file = helpers.getFile(self.options['inputWebsitesFile'])
-        file = helpers.findBetween(file, "['", "']")
-        sites = file.split("', '")
         self.sites = []
 
-        for item in sites:
-            name = helpers.findBetween(item, '', ':')
-            url = helpers.findBetween(item, ':', '')
+        for item in file.splitlines():
+            name = helpers.findBetween(item, '', ' ')
+            url = helpers.findBetween(item, ' ', '')
 
             site = {
                 'name': name,
@@ -709,14 +806,6 @@ class Articles:
             }
 
             self.sites.append(site)
-
-        # read keywords file
-        keywordsFile = helpers.getFile(self.options['inputKeywordsFile'])
-        list = keywordsFile.splitlines()
-        self.keywords = []
-
-        for line in list:
-            self.keywords.append(helpers.findBetween(line, "'", "'"))
 
         self.removeOldEntries()
 
