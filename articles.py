@@ -785,7 +785,9 @@ class Articles:
 
     def initialize(self):
         suffix = helpers.getArgument('-w', False)
-        suffix = '-' + helpers.fileNameOnly(suffix, False)
+        
+        if suffix:
+            suffix = '-' + helpers.fileNameOnly(suffix, False)
 
         helpers.setUpLogging(suffix)
 
