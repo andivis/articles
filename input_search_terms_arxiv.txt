@@ -1,1 +1,3 @@
-(all:heart OR all:machine learning) AND (all:nonlinear OR all:heart)
+("machine learning" OR "deep learning" OR "artificial intelligence" OR AI) AND (cardiology OR cardiovascular OR cardiac OR heart)
+(ti:heart OR ti:cardiac) AND (nonlinear OR "machine learning")
+"machine learning" OR "deep learning"
