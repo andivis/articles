@@ -33,7 +33,7 @@ pip install wget
 ## Command line parameters
 
 - `-w`: file containing the list of websites. Default: `input_websites.txt`.
-- `-s`: file containing the list of search terms. Default: `input_search_terms.txt`.
+- `-s`: file containing the list of search terms. Default: the value in the `[search terms]` section in `options.ini`.
 - `-d`: where to write the pdf files and logs. Default: `~/Desktop/WebSearch_(current date)`.
 - `-i`: if this parameter is present, the script will download the article id's in the id list files specified in `options.ini`. It can be simply `-i`. Nothing needs to follow it. Default is off.
 
