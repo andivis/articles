@@ -101,6 +101,8 @@ def getNested(j, keys):
         logging.error(e)
         return ""
 
+    return ""
+
 def stringToFloatingPoint(s):
     result = 0.0
 
