@@ -242,7 +242,19 @@ class Articles:
             if self.isInArticleList(existingResults, articleId):
                 continue
 
-            result = [articleId, pdfUrl, title, abstract]
+            result = [
+                articleId,
+                pdfUrl,
+                title,
+                abstract,
+                information.get('allAuthors', ''),
+                information.get('allLocations', ''),
+                information.get('firstAuthor', ''),
+                information.get('firstAuthorLocation', ''),
+                information.get('lastAuthor', ''),
+                information.get('lastAuthorLocation', ''),
+                information.get('citations', '')              
+            ]
             
             results.append(result)
 
@@ -266,38 +278,43 @@ class Articles:
 
         authorXpath = "//*[contains(@id, 'hw-article-author-popups-')]/div[contains(@class, 'author-tooltip-')]"
 
-        elements = self.downloader.getXpathInElement(document, authorXpath, False)
+        elements = document.xpath(authorXpath)
 
         for i, element in enumerate(elements):
-            nameElements = self.downloader.getXpathInElement(element, ".//div[@class = 'author-tooltip-name']", False)
-
-            name = self.getFirst(nameElements)
-
-            if name:
-                name = name.text_content().strip()
+            name = self.downloader.getXpathInElement(element, ".//div[@class = 'author-tooltip-name']", False)
 
             if not name:
                 continue
 
-            locationElements = self.downloader.getXpathInElement(element, ".//div[@class = 'author-tooltip-affiliation']", False)
+            name = name.strip()
 
-            location = self.getFirst(locationElements)
+            allAuthors.append(name)
 
-            if location:
-                location = location.text_content().strip()
-
-            if not location:
-                continue
-
-            if i == 0 and not firstAuthorLocation:
-                firstAuthorLocation = location
+            if not firstAuthor:
+                firstAuthor = name
             # only if the article has a last author
-            elif i > 0 and i == len(elements) - 1 and not lastAuthorLocation:
-                lastAuthorLocation = location
+            elif i > 0 and i == len(elements) - 1 and not lastAuthor:
+                lastAuthor = name
 
-            # avoid duplicates
-            if not location in allLocations:
-                allLocations.append(location)
+            affiliations = element.xpath(".//span[@class = 'nlm-aff']")
+            
+            for affiliation in affiliations:
+                location = affiliation.text_content()
+
+                if not location:
+                    continue
+
+                location = location.strip()
+
+                if i == 0 and not firstAuthorLocation:
+                    firstAuthorLocation = location
+                # only if the article has a last author
+                elif i > 0 and i == len(elements) - 1 and not lastAuthorLocation:
+                    lastAuthorLocation = location
+
+                # avoid duplicates
+                if not location in allLocations:
+                    allLocations.append(location)
 
         result = {
             'title': title,
@@ -617,6 +634,9 @@ class Articles:
 
         searchLogLine = [now, keyword, siteName, self.totalResults, self.options['maximumResultsPerKeyword']]
         pdfLogLine = [now, keyword, siteName, resultNumber, self.options['maximumResultsPerKeyword'], articleId, title, abstract, downloaded, outputFileName]
+
+        if len(articleId) >= 5:
+            pdfLogLine += article[4:]
 
         if searchLog:
             self.appendCsvFile(searchLogLine, searchLogFileName)
