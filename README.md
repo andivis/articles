@@ -19,6 +19,7 @@ cd articles
 pip install arxiv
 pip install lxml
 pip install wget
+pip install xmltodict
 ```
 
 ## Instructions

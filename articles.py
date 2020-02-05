@@ -254,9 +254,61 @@ class Articles:
         title = self.downloader.getXpath(page, siteData['titleInDetailsPageXpath'], True)
         abstract = self.downloader.getXpath(page, siteData['abstractXpath'], True)
 
+        import lxml.html as lh
+        document = lh.fromstring(page)
+
+        allAuthors = []
+        allLocations = []
+        firstAuthor = ''
+        firstAuthorLocation = ''
+        lastAuthor = ''
+        lastAuthorLocation = ''
+
+        authorXpath = "//*[contains(@id, 'hw-article-author-popups-')]/div[contains(@class, 'author-tooltip-')]"
+
+        elements = self.downloader.getXpathInElement(document, authorXpath, False)
+
+        for i, element in enumerate(elements):
+            nameElements = self.downloader.getXpathInElement(element, ".//div[@class = 'author-tooltip-name']", False)
+
+            name = self.getFirst(nameElements)
+
+            if name:
+                name = name.text_content().strip()
+
+            if not name:
+                continue
+
+            locationElements = self.downloader.getXpathInElement(element, ".//div[@class = 'author-tooltip-affiliation']", False)
+
+            location = self.getFirst(locationElements)
+
+            if location:
+                location = location.text_content().strip()
+
+            if not location:
+                continue
+
+            if i == 0 and not firstAuthorLocation:
+                firstAuthorLocation = location
+            # only if the article has a last author
+            elif i > 0 and i == len(elements) - 1 and not lastAuthorLocation:
+                lastAuthorLocation = location
+
+            # avoid duplicates
+            if not location in allLocations:
+                allLocations.append(location)
+
         result = {
             'title': title,
-            'abstract': abstract
+            'abstract': abstract,
+            'allAuthors': '; '.join(allAuthors),
+            'allLocations': '; '.join(allLocations),
+            'firstAuthor': firstAuthor,
+            'firstAuthorLocation':firstAuthorLocation,
+            'lastAuthor': lastAuthor,
+            'lastAuthorLocation': lastAuthorLocation,
+            'citations': ''
         }
 
         return result
@@ -337,12 +389,12 @@ class Articles:
                 if len(shortTitle) > 50:
                     shortTitle = shortTitle[0:50] + '...'
 
-                abstract = self.getNihAbstract(api, item)
+                details = self.getNihDetails(api, item)
 
                 logging.info(f'Results: {i}. Id: {item}. Title: {shortTitle}.')
 
                 # write these results to a separate csv
-                self.logNihResultToCsvFile(site, keyword, articleSummary, abstract)
+                self.logNihResultToCsvFile(site, keyword, articleSummary, details)
 
             pdfUrl = self.getPdfUrlFromSciHub(site, item)
 
@@ -355,14 +407,21 @@ class Articles:
 
         return results
 
-    def getNihAbstract(self, api, articleId):
-        response = api.get(f'/entrez/eutils/efetch.fcgi?db=pubmed&id={articleId}&retmode=text&rettype=Abstract')
-
-        result = helpers.findBetween(response, 'Author information:', '')
-        result = helpers.findBetween(result, '\n\n', '\n\nDOI: ')
+    def getNihDetails(self, api, articleId):
+        import xmltodict
         
-        return result
+        response = api.get(f'/entrez/eutils/efetch.fcgi?db=pubmed&id={articleId}&retmode=xml')
+        
+        details = xmltodict.parse(response)
 
+        referenceList = helpers.getNested(details, ['PubmedArticleSet', 'PubmedArticle', 'PubmedData', 'ReferenceList'])
+
+        details = helpers.getNested(details, ['PubmedArticleSet', 'PubmedArticle', 'MedlineCitation', 'Article'])
+
+        details['ReferenceList'] = referenceList
+
+        return details
+    
     def arxivSearch(self, site, keyword):
         results = []
 
@@ -412,7 +471,15 @@ class Articles:
 
             abstract = item.get('summary', '')
 
-            result = [id, pdfUrl, title, abstract]
+            allAuthors = '; '.join(item.get('authors', ''))
+            allLocations = []
+            firstAuthor = self.getFirst(item.get('authors', ''))
+            firstAuthorLocation = ''
+            lastAuthor = self.getLast(item.get('authors', ''))
+            lastAuthorLocation = ''
+            citations = []
+
+            result = [id, pdfUrl, title, abstract, allAuthors, allLocations, firstAuthor, firstAuthorLocation, lastAuthor, lastAuthorLocation, citations]
             
             results.append(result)
 
@@ -426,6 +493,18 @@ class Articles:
         self.logToCsvFiles(site, keyword, -1, [], '', False, True, False)
 
         return results
+
+    def getFirst(self, array):
+        if isinstance(array, list) and len(array) > 0:
+            return array[0]
+
+        return ''
+
+    def getLast(self, array):
+        if isinstance(array, list) and len(array) > 0:
+            return array[-1]
+
+        return ''
 
     def getLastAfterSplit(self, s, splitter):
         result = ''
@@ -519,7 +598,7 @@ class Articles:
             helpers.toFile('Date-Time,Search terms,Websites,Number of papers,Requested maximumResultsPerKeyword', searchLogFileName)
 
         if pdfLog and not os.path.exists(pdfLogFileName):
-            helpers.toFile('Datetime, Search terms, Website, Result number, Total results requested, ID number, Title, Abstract, Downloaded?, FileNamePath', pdfLogFileName)
+            helpers.toFile('Datetime, Search terms, Website, Result number, Total results requested, ID number, Title, Abstract, Downloaded?, FileNamePath, all_authors, all_locations, first_author, firstauthor_location, lastauthor, last_author_location, citations', pdfLogFileName)
 
         now = datetime.datetime.now().strftime('%m%d%y-%H%M%S')
 
@@ -546,14 +625,14 @@ class Articles:
             self.appendCsvFile(pdfLogLine, pdfLogFileName)
 
     # writes article details to a csv file
-    def logNihResultToCsvFile(self, site, keyword, article, abstract):
+    def logNihResultToCsvFile(self, site, keyword, article, articleDetails):
         name = site.get('name', '').lower()
         
         csvFileName = os.path.join(self.options['outputDirectory'], f'{name}_results.csv')
         
         if not os.path.exists(csvFileName):
             helpers.makeDirectory(os.path.dirname(csvFileName))
-            helpers.toFile('DateTime,Keyword,Title,URL,Abstract,Description,Details,ShortDetails,Resource,Type,Identifiers,Db,EntrezUID,Properties', csvFileName)
+            helpers.toFile('DateTime,Keyword,Title,URL,Abstract,Description,Details,ShortDetails,Resource,Type,Identifiers,Db,EntrezUID,Properties,all_authors,all_locations,first_author,firstauthor_location,lastauthor,last_author_location,citations', csvFileName)
 
         siteName = site.get('name', '')
 
@@ -571,12 +650,67 @@ class Articles:
 
         details = article.get('fulljournalname', '') + '. ' + article.get('elocationid', '') + '. ' + publicationTypes + '.'
         
+        allAuthors = []
+
+        for author in article.get('authors', ''):
+            allAuthors.append(author.get('name', ''))
+
+        allAuthors = '; '.join(allAuthors)
+
+        # from details
+        firstAuthorLocation = ''
+        lastAuthorLocation = ''
+        allLocations = []
+        citations = []
+
+        authorList = helpers.getNested(articleDetails, ['AuthorList', 'Author'])
+
+        for i, author in enumerate(authorList):
+            # an author can have multiple affiliations
+            # it's a dictionary for one result. list for more than one.
+            affiliations = author.get('AffiliationInfo', [])
+
+            if not isinstance(affiliations, list):
+                affiliations = [affiliations]
+            
+            for affiliation in affiliations:
+                location = affiliation.get('Affiliation', '')
+
+                if not location:
+                    continue
+
+                if i == 0 and not firstAuthorLocation:
+                    firstAuthorLocation = location
+                # only if the article has a last author
+                elif article.get('lastauthor', '') and i > 0 and i == len(authorList) - 1 and not lastAuthorLocation:
+                    lastAuthorLocation = location
+
+                # avoid duplicates
+                if not location in allLocations:
+                    allLocations.append(location)
+
+        allLocations = '; '.join(allLocations)
+
+        referenceList = helpers.getNested(articleDetails, ['ReferenceList', 'Reference'])
+        
+        for reference in referenceList:
+            string = reference.get('Citation', '')
+
+            id = helpers.getNested(reference, ['ArticleIdList', 'ArticleId', '#text'])
+
+            if id:
+                string += f' (PMID: {id})'
+
+            citations.append(string)
+
+        citations = ' | '.join(citations)
+
         line = [
             datetime.datetime.now().strftime('%m%d%y-%H%M%S'),
             keyword,
             article.get('title', ''),
             f'/pubmed/{articleId}',
-            abstract,
+            helpers.getNested(articleDetails, ['Abstract', 'AbstractText']),
             description,
             details,
             article.get('fulljournalname', '') + '. ' + helpers.findBetween(article.get('sortpubdate', ''), '', '/'),
@@ -585,7 +719,14 @@ class Articles:
             f'PMID:{articleId}',
             'pubmed',
             articleId,
-            properties
+            properties,
+            allAuthors,
+            allLocations,
+            article.get('sortfirstauthor', ''),
+            firstAuthorLocation,
+            article.get('lastauthor', ''),
+            lastAuthorLocation,
+            citations
         ]
         
         self.appendCsvFile(line, csvFileName)

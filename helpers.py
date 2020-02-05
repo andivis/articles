@@ -89,15 +89,16 @@ def getNested(j, keys):
 
         for key in keys:
             if not key in element:
-                break;
+                break
             
             element = element[key]
 
-            if i == len(keys - 1):
+            if i == len(keys) - 1:
                 return element
 
             i += 1
-    except:
+    except Exception as e:
+        logging.error(e)
         return ""
 
 def stringToFloatingPoint(s):
