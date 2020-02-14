@@ -391,31 +391,38 @@ class Articles:
 
             i += 1
 
-            summaryResponse = api.get(f'/entrez/eutils/esummary.fcgi?db=pubmed&id={item}&retmode=json')
+            try:
+                summaryResponse = api.get(f'/entrez/eutils/esummary.fcgi?db=pubmed&id={item}&retmode=json')
 
-            title = ''
-            abstract = ''
+                title = ''
+                abstract = ''
 
-            if 'result' in summaryResponse and item in summaryResponse['result']:
-                articleSummary = summaryResponse['result'][item]
-                
-                title = articleSummary.get('title', '')
-                
-                shortTitle = title
+                if 'result' in summaryResponse and item in summaryResponse['result']:
+                    articleSummary = summaryResponse['result'][item]
+                    
+                    title = articleSummary.get('title', '')
+                    
+                    shortTitle = title
 
-                if len(shortTitle) > 50:
-                    shortTitle = shortTitle[0:50] + '...'
+                    if len(shortTitle) > 50:
+                        shortTitle = shortTitle[0:50] + '...'
 
-                details = self.getNihDetails(api, item, articleSummary)
+                    details = self.getNihDetails(api, item, articleSummary)
 
-                logging.info(f'Results: {i}. Id: {item}. Title: {shortTitle}.')
+                    logging.info(f'Results: {i}. Id: {item}. Title: {shortTitle}.')
 
-                # write these results to a separate csv
-                self.logNihResultToCsvFile(site, keyword, articleSummary, details)
+                    # write these results to a separate csv
+                    self.logNihResultToCsvFile(site, keyword, articleSummary, details)
 
-            pdfUrl = self.getPdfUrlFromSciHub(site, item)
+                pdfUrl = self.getPdfUrlFromSciHub(site, item)
 
-            if not pdfUrl:
+                if not pdfUrl:
+                    continue
+            except Exception as e:
+                # if something goes wrong, we just go to next keyword
+                logging.error(f'Skipping {item}. Something went wrong.')
+                logging.debug(traceback.format_exc())                
+                logging.error(e)
                 continue
             
             result = [item, pdfUrl, title, abstract]
@@ -456,6 +463,10 @@ class Articles:
         citations = []
 
         authorList = helpers.getNested(details, ['AuthorList', 'Author'])
+
+        # sometimes it returns a single author rather than a list
+        if not isinstance(authorList, list):
+            authorList = [authorList]
 
         for i, author in enumerate(authorList):
             # an author can have multiple affiliations

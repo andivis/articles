@@ -329,9 +329,10 @@ def setUpLogging(fileNameSuffix=''):
     logFileName = os.path.join('logs', f'log{fileNameSuffix}.txt')
 
     if '--debug' in sys.argv:
-        # clear the file
-        open(logFileName, 'w').close()
-        rootLogger.setLevel(logging.DEBUG)
+        if os.path.exists(logFileName):
+            # clear the file
+            open(logFileName, 'w').close()
+            rootLogger.setLevel(logging.DEBUG)
 
     makeDirectory(os.path.dirname(logFileName))
 
