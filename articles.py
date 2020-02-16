@@ -409,6 +409,8 @@ class Articles:
 
                     details = self.getNihDetails(api, item, articleSummary)
 
+                    abstract = details.get('abstract', '')
+
                     logging.info(f'Results: {i}. Id: {item}. Title: {shortTitle}.')
 
                     # write these results to a separate csv
@@ -494,9 +496,10 @@ class Articles:
 
         allLocations = ' | '.join(allLocations)
 
-        referenceList = helpers.getNested(details, ['ReferenceList', 'Reference'])
-        
-        for reference in referenceList:
+        for reference in details.get('ReferenceList', ''):
+            if reference.get('Reference', ''):
+                reference = reference.get('Reference', '')
+
             string = reference.get('Citation', '')
 
             id = helpers.getNested(reference, ['ArticleIdList', 'ArticleId', '#text'])
@@ -508,7 +511,26 @@ class Articles:
 
         citations = ' | '.join(citations)
 
+        abstractSections = []
+
+        # sometimes it returns a single string rather than a list of strings
+        oneSection = helpers.getNested(details, ['Abstract', 'AbstractText', '#text'])
+
+        if not oneSection:
+            # sometimes it's like this
+            oneSection = helpers.getNested(details, ['Abstract', 'AbstractText'])
+
+        if oneSection and isinstance(oneSection, str):
+            abstractSections = [oneSection]
+        else:
+            for item in helpers.getNested(details, ['Abstract', 'AbstractText']):
+                abstractSection = item.get('@Label', '') + ': ' + item.get('#text', '')
+                abstractSections.append(abstractSection)
+
+        abstract = '\n\n'.join(abstractSections)
+
         result = {
+            'abstract' : abstract,
             'allAuthors': allAuthors,
             'allLocations': allLocations,
             'firstAuthor': firstAuthor,
@@ -758,7 +780,7 @@ class Articles:
             keyword,
             article.get('title', ''),
             f'/pubmed/{articleId}',
-            helpers.getNested(articleDetails, ['Abstract', 'AbstractText']),
+            articleDetails.get('abstract', ''),
             description,
             details,
             article.get('fulljournalname', '') + '. ' + helpers.findBetween(article.get('sortpubdate', ''), '', '/'),
