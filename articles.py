@@ -85,6 +85,7 @@ class Articles:
                     'resultsXpath': "//a[@class = 'highwire-cite-linked-title']",
                     'totalResultsXpath': "//*[@id = 'search-summary-wrapper']",
                     'titleXpath': "./span[@class = 'highwire-cite-title']",
+                    'dateSubmittedXpath': "//div[@class = 'pane-content' and contains(., 'Posted')]",
                     'urlPrefix': 'https://www.biorxiv.org',
                     'afterFirstPageSuffix': '?page={}',
                     'abstractXpath' : "//*[@id = 'abstract-1']//*[@id = 'p-2']",
@@ -96,6 +97,7 @@ class Articles:
                     'resultsXpath': "//a[@class = 'highwire-cite-linked-title']",
                     'totalResultsXpath': "//*[@id = 'search-summary-wrapper']",
                     'titleXpath': "./span[@class = 'highwire-cite-title']",
+                    'dateSubmittedXpath': "//div[@class = 'pane-content' and contains(., 'Posted')]",
                     'urlPrefix': 'https://www.medrxiv.org',
                     'afterFirstPageSuffix': '?page={}',
                     'abstractXpath' : "//*[@id = 'abstract-1']//*[@id = 'p-2']",
@@ -201,62 +203,69 @@ class Articles:
         
         # get information about each item
         for element in elements:
-            if self.shouldStopForThisKeyword(i, False):
-                break
+            try:
+                if self.shouldStopForThisKeyword(i, False):
+                    break
 
-            i += 1
-           
-            url = element.attrib['href']
-            url = siteData['urlPrefix'] + url
+                i += 1
+            
+                url = element.attrib['href']
+                url = siteData['urlPrefix'] + url
 
-            # avoids duplicates
-            if url in urls:
-                continue
+                # avoids duplicates
+                if url in urls:
+                    continue
 
-            urls.append(url)
+                urls.append(url)
 
-            pdfUrl = url + '.full.pdf'
+                pdfUrl = url + '.full.pdf'
+                    
+                articleId = self.getLastAfterSplit(url, '/')
+
+                title = ''
                 
-            articleId = self.getLastAfterSplit(url, '/')
+                if not self.options['useIdLists']:
+                    title = self.downloader.getXpathInElement(element, siteData['titleXpath'])
 
-            title = ''
-            
-            if not self.options['useIdLists']:
-                title = self.downloader.getXpathInElement(element, siteData['titleXpath'])
+                information = self.getInformationFromDetailsPage(siteData, url)
 
-            information = self.getInformationFromDetailsPage(siteData, url)
+                if not title:
+                    title = information.get('title', '')
 
-            if not title:
-                title = information.get('title', '')
+                abstract = information.get('abstract', '')
 
-            abstract = information.get('abstract', '')
+                shortTitle = title
 
-            shortTitle = title
+                if len(shortTitle) > 50:
+                    shortTitle = shortTitle[0:50] + '...'
 
-            if len(shortTitle) > 50:
-                shortTitle = shortTitle[0:50] + '...'
+                logging.info(f'Results: {len(urls)}. Url: {url}. Title: {shortTitle}.')
+                
+                # this allows us to know when we reached the final page
+                if self.isInArticleList(existingResults, articleId):
+                    continue
 
-            logging.info(f'Results: {len(urls)}. Url: {url}. Title: {shortTitle}.')
-            
-            # this allows us to know when we reached the final page
-            if self.isInArticleList(existingResults, articleId):
-                continue
-
-            result = [
-                articleId,
-                pdfUrl,
-                title,
-                abstract,
-                information.get('allAuthors', ''),
-                information.get('allLocations', ''),
-                information.get('firstAuthor', ''),
-                information.get('firstAuthorLocation', ''),
-                information.get('lastAuthor', ''),
-                information.get('lastAuthorLocation', ''),
-                information.get('citations', '')              
-            ]
-            
-            results.append(result)
+                result = [
+                    articleId,
+                    pdfUrl,
+                    title,
+                    information.get('dateSubmitted'),
+                    abstract,
+                    information.get('allAuthors', ''),
+                    information.get('allLocations', ''),
+                    information.get('firstAuthor', ''),
+                    information.get('firstAuthorLocation', ''),
+                    information.get('lastAuthor', ''),
+                    information.get('lastAuthorLocation', ''),
+                    information.get('citations', '')              
+                ]
+                
+                results.append(result)
+            except Exception as e:
+                # if something goes wrong, we just go to next keyword
+                logging.error(f'Skipping. Something went wrong.')
+                logging.debug(traceback.format_exc())                
+                logging.error(e)
 
         return results
 
@@ -264,7 +273,15 @@ class Articles:
         page = self.downloader.get(url)
 
         title = self.downloader.getXpath(page, siteData['titleInDetailsPageXpath'], True)
+        
+        dateSubmitted = self.downloader.getXpath(page, siteData['dateSubmittedXpath'], True)
+        # it starts with a non-breaking space
+        dateSubmitted = helpers.findBetween(dateSubmitted, '\xa0', '.')
+        
         abstract = self.downloader.getXpath(page, siteData['abstractXpath'], True)
+
+        if dateSubmitted:
+            dateSubmitted = self.changeDateFormat(dateSubmitted, '%B %d, %Y')
 
         import lxml.html as lh
         document = lh.fromstring(page)
@@ -318,6 +335,7 @@ class Articles:
 
         result = {
             'title': title,
+            'dateSubmitted': dateSubmitted,
             'abstract': abstract,
             'allAuthors': '; '.join(allAuthors),
             'allLocations': ' | '.join(allLocations),
@@ -329,6 +347,11 @@ class Articles:
         }
 
         return result
+
+    def changeDateFormat(self, dateString, sourceFormat):
+        date = datetime.datetime.strptime(dateString, sourceFormat)
+
+        return date.strftime('%Y-%m-%d')
 
     def showResultCount(self):
         maximumResults = self.options['maximumResultsPerKeyword']
@@ -407,8 +430,12 @@ class Articles:
                     if len(shortTitle) > 50:
                         shortTitle = shortTitle[0:50] + '...'
 
-                    details = self.getNihDetails(api, item, articleSummary)
+                    dateSubmitted = articleSummary.get('sortpubdate', '')
+                    dateSubmitted = helpers.findBetween(dateSubmitted, '', ' ')
+                    dateSubmitted = dateSubmitted.replace('/', '-')
 
+                    details = self.getNihDetails(api, item, articleSummary)
+                   
                     abstract = details.get('abstract', '')
 
                     logging.info(f'Results: {i}. Id: {item}. Title: {shortTitle}.')
@@ -427,7 +454,7 @@ class Articles:
                 logging.error(e)
                 continue
             
-            result = [item, pdfUrl, title, abstract]
+            result = [item, pdfUrl, title, dateSubmitted, abstract]
 
             fields = ['allAuthors', 'allLocations', 'firstAuthor', 'firstAuthorLocation', 'lastAuthor', 'lastAuthorLocation', 'citations']
 
@@ -584,6 +611,10 @@ class Articles:
             title = title.replace('\n', ' ')
             title = self.squeezeWhitespace(title)
 
+            dateSubmitted = item.get('published', '')
+
+            dateSubmitted = helpers.findBetween(dateSubmitted, '', 'T')
+
             shortTitle = title
 
             if len(shortTitle) > 50:
@@ -599,7 +630,7 @@ class Articles:
             lastAuthorLocation = ''
             citations = ''
 
-            result = [id, pdfUrl, title, abstract, allAuthors, allLocations, firstAuthor, firstAuthorLocation, lastAuthor, lastAuthorLocation, citations]
+            result = [id, pdfUrl, title, dateSubmitted, abstract, allAuthors, allLocations, firstAuthor, firstAuthorLocation, lastAuthor, lastAuthorLocation, citations]
             
             results.append(result)
 
@@ -720,7 +751,7 @@ class Articles:
             helpers.toFile('Date-Time,Search terms,Websites,Number of papers,Requested maximumResultsPerKeyword', searchLogFileName)
 
         if pdfLog and not os.path.exists(pdfLogFileName):
-            helpers.toFile('Datetime, Search terms, Website, Result number, Total results requested, ID number, Title, Abstract, Downloaded?, FileNamePath, all_authors, all_locations, first_author, firstauthor_location, lastauthor, last_author_location, citations', pdfLogFileName)
+            helpers.toFile('Datetime, Search terms, Website, Result number, Total results requested, ID number, Title, Date Submitted, Abstract, Downloaded?, FileNamePath, all_authors, all_locations, first_author, firstauthor_location, lastauthor, last_author_location, citations', pdfLogFileName)
 
         now = datetime.datetime.now().strftime('%m%d%y-%H%M%S')
 
@@ -728,24 +759,26 @@ class Articles:
 
         articleId = ''
         title = ''
+        dateSubmitted = ''
         abstract = ''
 
-        if len(article) >= 3:
+        if len(article) >= 4:
             articleId = article[0]
             title = article[2]
+            dateSubmitted = article[3]
 
-        if len(article) >= 4:
-            abstract = article[3]
+        if len(article) >= 5:
+            abstract = article[4]
 
         searchLogLine = [now, keyword, siteName, self.totalResults, self.options['maximumResultsPerKeyword']]
-        pdfLogLine = [now, keyword, siteName, resultNumber, self.options['maximumResultsPerKeyword'], articleId, title, abstract, downloaded, outputFileName]
+        pdfLogLine = [now, keyword, siteName, resultNumber, self.options['maximumResultsPerKeyword'], articleId, title, dateSubmitted, abstract, downloaded, outputFileName]
 
         if searchLog:
             self.appendCsvFile(searchLogLine, searchLogFileName)
 
         if pdfLog:
-            if len(article) >= 5:
-                pdfLogLine += article[4:]
+            if len(article) >= 6:
+                pdfLogLine += article[5:]
 
             self.appendCsvFile(pdfLogLine, pdfLogFileName)
 
@@ -757,12 +790,18 @@ class Articles:
         
         if not os.path.exists(csvFileName):
             helpers.makeDirectory(os.path.dirname(csvFileName))
-            helpers.toFile('DateTime,Keyword,Title,URL,Abstract,Description,Details,ShortDetails,Resource,Type,Identifiers,Db,EntrezUID,Properties,all_authors,all_locations,first_author,firstauthor_location,lastauthor,last_author_location,citations', csvFileName)
+            helpers.toFile('DateTime,Keyword,Title,Date_Submitted,URL,Abstract,Description,Details,ShortDetails,Resource,Type,Identifiers,Db,EntrezUID,Properties,all_authors,all_locations,first_author,firstauthor_location,lastauthor,last_author_location,citations', csvFileName)
 
         siteName = site.get('name', '')
 
         articleId = article.get('uid', '')
+
+        dateSubmitted = article.get('sortpubdate', '')
+        dateSubmitted = helpers.findBetween(dateSubmitted, '', ' ')
+        dateSubmitted = dateSubmitted.replace('/', '-')
+
         properties = 'create date: ' + helpers.findBetween(article.get('sortpubdate', ''), '', ' ') + ' | first author: ' + article.get('sortfirstauthor', '')
+
         description = ''
 
         authors = []
@@ -779,6 +818,7 @@ class Articles:
             datetime.datetime.now().strftime('%m%d%y-%H%M%S'),
             keyword,
             article.get('title', ''),
+            dateSubmitted,
             f'/pubmed/{articleId}',
             articleDetails.get('abstract', ''),
             description,
