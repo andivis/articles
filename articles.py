@@ -110,7 +110,8 @@ class Articles:
         
         # download all the pdf url's we found
         for article in articles:
-            logging.info(f'Site {self.onItemIndex + 1} of {len(self.sites)}: {siteName}. Keyword {self.onKeywordIndex + 1} of {len(self.keywords)}: {keyword}. Downloading item {i + 1} of {len(articles)}: {article[0]}.')
+            if self.options['downloadPdfs']:
+                logging.info(f'Site {self.onItemIndex + 1} of {len(self.sites)}: {siteName}. Keyword {self.onKeywordIndex + 1} of {len(self.keywords)}: {keyword}. Downloading item {i + 1} of {len(articles)}: {article[0]}.')
                         
             self.outputResult(site, keyword, i + 1, article)
 
