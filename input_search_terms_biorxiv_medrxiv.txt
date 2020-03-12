@@ -1,1 +1,2 @@
-(DM OR Diabetes) AND wound infection
+"machine learning" OR "deep learning" AND heart
+"machine learning" OR "deep learning" AND cardiology

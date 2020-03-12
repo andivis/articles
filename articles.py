@@ -474,6 +474,10 @@ class Articles:
 
         referenceList = helpers.getNested(details, ['PubmedArticleSet', 'PubmedArticle', 'PubmedData', 'ReferenceList'])
 
+        # sometimes it's in a different format
+        if not isinstance(referenceList, list):
+            referenceList = helpers.getNested(details, ['PubmedArticleSet', 'PubmedArticle', 'PubmedData', 'ReferenceList', 'Reference'])
+
         details = helpers.getNested(details, ['PubmedArticleSet', 'PubmedArticle', 'MedlineCitation', 'Article'])
 
         details['ReferenceList'] = referenceList
@@ -524,6 +528,9 @@ class Articles:
         allLocations = ' | '.join(allLocations)
 
         for reference in details.get('ReferenceList', ''):
+            if isinstance(reference, str):
+                continue
+
             if reference.get('Reference', ''):
                 reference = reference.get('Reference', '')
 
@@ -709,10 +716,13 @@ class Articles:
 
             outputFileName = os.path.join(self.options['outputDirectory'], subdirectory, fileName)
 
-            helpers.makeDirectory(os.path.dirname(outputFileName))
+            if self.options['downloadPdfs']:
+                helpers.makeDirectory(os.path.dirname(outputFileName))
 
             # no need to download again. still need to write to csv file.
-            if pdfUrl == 'binary':
+            if not self.options['downloadPdfs']:
+                logging.debug(f'Not downloading. downloadPdfs is false.')
+            elif pdfUrl == 'binary':
                 logging.debug(f'Already wrote the binary file to {outputFileName}')
                 downloaded = 'Downloaded successfully'
             # only download if necessary
@@ -1065,7 +1075,8 @@ class Articles:
             'maximumDaysToKeepItems': 90,
             'maximumResultsPerKeyword': 25000,
             'directoryToCheckForDuplicates': '',
-            'useIdLists': 0
+            'useIdLists': 0,
+            'downloadPdfs': 0
         }
 
         self.keywordsFiles = {}
