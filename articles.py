@@ -900,6 +900,9 @@ class Articles:
     def getPdfUrlFromSciHub(self, site, articleId):
         result = ''
 
+        if not self.options['downloadPdfs']:
+            return result
+
         api = Api('https://sci-hub.tw')
 
         body = {
