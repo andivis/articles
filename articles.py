@@ -110,6 +110,8 @@ class Articles:
         
         # download all the pdf url's we found
         for article in articles:
+            logging.info(f'Site {self.onItemIndex + 1} of {len(self.sites)}: {siteName}. Keyword {self.onKeywordIndex + 1} of {len(self.keywords)}: {keyword}. Downloading item {i + 1} of {len(articles)}: {article[0]}.')
+                        
             self.outputResult(site, keyword, i + 1, article)
 
             i += 1
@@ -441,7 +443,10 @@ class Articles:
                     # write these results to a separate csv
                     self.logNihResultToCsvFile(site, keyword, articleSummary, details)
 
-                pdfUrl = ''
+                pdfUrl = self.getPdfUrlFromSciHub(site, item)
+
+                if not pdfUrl:
+                    continue
             except Exception as e:
                 # if something goes wrong, we just go to next keyword
                 logging.error(f'Skipping {item}. Something went wrong.')
@@ -468,10 +473,6 @@ class Articles:
         details = xmltodict.parse(response)
 
         referenceList = helpers.getNested(details, ['PubmedArticleSet', 'PubmedArticle', 'PubmedData', 'ReferenceList'])
-
-        # sometimes it's in a different format
-        if not isinstance(referenceList, list):
-            referenceList = helpers.getNested(details, ['PubmedArticleSet', 'PubmedArticle', 'PubmedData', 'ReferenceList', 'Reference'])
 
         details = helpers.getNested(details, ['PubmedArticleSet', 'PubmedArticle', 'MedlineCitation', 'Article'])
 
@@ -523,9 +524,6 @@ class Articles:
         allLocations = ' | '.join(allLocations)
 
         for reference in details.get('ReferenceList', ''):
-            if isinstance(reference, str):
-                continue
-
             if reference.get('Reference', ''):
                 reference = reference.get('Reference', '')
 
@@ -699,7 +697,43 @@ class Articles:
         pdfUrl = article[1]
 
         downloaded = 'Not downloaded'
-        outputFileName = ''
+
+        if pdfUrl.startswith('Error: '):
+            outputFileName = 'Nan'
+
+            # it's the error message
+            downloaded = pdfUrl
+        else:
+            subdirectory = f'{siteName}'
+            fileName = f'{articleId}.pdf'
+
+            outputFileName = os.path.join(self.options['outputDirectory'], subdirectory, fileName)
+
+            helpers.makeDirectory(os.path.dirname(outputFileName))
+
+            # no need to download again. still need to write to csv file.
+            if pdfUrl == 'binary':
+                logging.debug(f'Already wrote the binary file to {outputFileName}')
+                downloaded = 'Downloaded successfully'
+            # only download if necessary
+            elif os.path.exists(outputFileName):
+                logging.info(f'Already done. Output file {outputFileName} already exists.')
+
+                if not '--debug' in sys.argv:
+                    return
+            elif not self.existsInDirectory(fileName):
+                logging.debug(f'Downloading. Output file does not exist.')
+                success = self.downloader.downloadBinaryFile(pdfUrl, outputFileName)
+                print('')
+
+                if self.handleCaptcha(siteName, outputFileName):
+                    downloaded = 'Captcha'
+                    outputFileName = 'NaN'
+                elif success:
+                    downloaded = 'Downloaded successfully'
+                else:
+                    downloaded = 'Download failed'
+                    outputFileName = 'NaN'
         
         # log to the csv file anyway
         self.logToCsvFiles(site, keyword, resultNumber, article, outputFileName, downloaded, False, True)
@@ -852,6 +886,54 @@ class Articles:
 
         return result
 
+    def getPdfUrlFromSciHub(self, site, articleId):
+        result = ''
+
+        api = Api('https://sci-hub.tw')
+
+        body = {
+            'sci-hub-plugin-check': '',
+            'request': articleId
+        }
+        
+        try:
+            response = api.post('/', body, False)
+
+            # sometimes it returns the pdf directly
+            if isinstance(response, bytes) and response.startswith(b'%PDF'):
+                siteName = helpers.getDomainName(site.get('url', ''))
+                outputFileName = os.path.join(self.options['outputDirectory'], siteName, f'{articleId}.pdf')
+
+                logging.debug(f'Response is a pdf file. Writing it to {outputFileName}.')
+                
+                helpers.makeDirectory(os.path.dirname(outputFileName))
+                helpers.toBinaryFile(response, outputFileName)
+
+                return 'binary'
+
+            result = self.downloader.getXpath(response, "//*[@id = 'buttons']//a[contains(@onclick, '.pdf')]", True, 'onclick')
+
+            result = result.replace("location.href='", '')
+
+            if result and not result.startswith('http'):
+                result = 'https:' + result
+
+            if result.endswith("'"):
+                result = result[0:-1]
+        except Exception as e:
+            logging.error(e)
+
+        if not result:
+            siteName = helpers.getDomainName(api.urlPrefix)
+            message = f'No result found on {siteName} for {articleId}'
+            logging.error(message)
+            result = f'Error: {message}'
+
+        return result
+
+    def download(self, url, site, keyword):
+        pass
+    
     def isDone(self, site, keyword):
         result = False;
 
